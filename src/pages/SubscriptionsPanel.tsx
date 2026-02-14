@@ -1,22 +1,43 @@
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit3, Trash2, X, CheckCircle2, Clock, CalendarDays } from 'lucide-react';
-import { MOCK_SUBSCRIPTIONS } from '../mockData';
+import { supabase } from '../lib/supabase';
 import { Subscription } from '../types';
 
-export const SubscriptionsPanel = () => {
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>(MOCK_SUBSCRIPTIONS);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [notification, setNotification] = useState<string | null>(null);
+export const SubscriptionsPanel = ({ branchId }: { branchId?: string }) => {
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (branchId) fetchSubscriptions();
+  }, [branchId]);
 
-  // Form State
-  const [formData, setFormData] = useState({
-    code: '',
-    hours: 40,
-    basePrice: 1000,
-    discount: 0,
-    startDate: new Date().toISOString().split('T')[0],
-  });
+  const fetchSubscriptions = async () => {
+    setLoading(true);
+    const { data, error } = await (supabase as any)
+      .from('subscriptions')
+      .select('*, customers(full_name, code)')
+      .eq('branch_id', branchId);
+
+    if (data) {
+      const formatted: Subscription[] = (data as any[]).map(s => ({
+        id: s.id,
+        name: s.customers?.full_name || 'عميل غير معروف',
+        code: s.customers?.code || '---',
+        type: s.type,
+        price: s.price || 0,
+        paid: s.paid || 0,
+        remaining: s.remaining || 0,
+        startDate: s.start_date || '',
+        endDate: s.end_date || '',
+        daysLeft: Math.ceil((new Date(s.end_date).getTime() - new Date().getTime()) / (1000 * 3600 * 24)),
+        totalHours: s.total_hours || 40,
+        usedHours: s.used_hours || 0,
+        status: (s.status as any) || 'Active'
+      }));
+      setSubscriptions(formatted);
+    }
+    setLoading(false);
+  };
 
   // Package Options for Quick Select
   const PACKAGES = [
@@ -46,45 +67,64 @@ export const SubscriptionsPanel = () => {
     setFormData(prev => ({ ...prev, hours: val, basePrice: suggestedPrice }));
   };
 
-  // Logic: Handle New Subscription
-  const handleAddSubscription = () => {
+  const handleAddSubscription = async () => {
     if (formData.hours < 40) {
       alert('الحد الأدنى للساعات هو 40 ساعة');
       return;
     }
 
-    const mockNames = ['محمد أحمد', 'علي كمال', 'سارة يوسف', 'خالد عمر'];
-    const randomName = mockNames[Math.floor(Math.random() * mockNames.length)];
+    // 1. Find Customer by Code
+    const { data: customer } = await (supabase as any)
+      .from('customers')
+      .select('id, full_name')
+      .eq('code', formData.code)
+      .single();
+
+    if (!customer) {
+      alert('كود العميل غير صحيح');
+      return;
+    }
 
     const start = new Date(formData.startDate);
     const end = new Date(start);
     end.setMonth(end.getMonth() + 1);
 
-    // Final Price Calculation
     const finalPrice = Math.max(0, formData.basePrice - formData.discount);
 
-    const newSub: Subscription = {
-      id: `S-${Date.now()}`,
-      name: randomName,
-      code: formData.code,
+    const { error } = await (supabase as any).from('subscriptions').insert({
+      branch_id: branchId,
+      customer_id: customer.id,
       type: `${formData.hours} Hours Package`,
       price: finalPrice,
       paid: finalPrice,
       remaining: 0,
-      startDate: formData.startDate,
-      endDate: end.toISOString().split('T')[0],
-      daysLeft: 30,
-      totalHours: formData.hours,
-      usedHours: 0,
+      start_date: formData.startDate,
+      end_date: end.toISOString().split('T')[0],
+      total_hours: formData.hours,
+      used_hours: 0,
       status: 'Active'
-    };
+    });
 
-    setSubscriptions([newSub, ...subscriptions]);
-    setIsModalOpen(false);
-    setNotification('تم تفعيل الاشتراك بنجاح');
-    setTimeout(() => setNotification(null), 3000);
-    setFormData({ code: '', hours: 40, basePrice: 1000, discount: 0, startDate: new Date().toISOString().split('T')[0] });
+    if (error) alert(error.message);
+    else {
+      setIsModalOpen(false);
+      setNotification('تم تفعيل الاشتراك بنجاح');
+      setTimeout(() => setNotification(null), 3000);
+      fetchSubscriptions();
+      setFormData({ code: '', hours: 40, basePrice: 1000, discount: 0, startDate: new Date().toISOString().split('T')[0] });
+    }
   };
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [notification, setNotification] = useState<string | null>(null);
+
+  const [formData, setFormData] = useState({
+    code: '',
+    hours: 40,
+    basePrice: 1000,
+    discount: 0,
+    startDate: new Date().toISOString().split('T')[0],
+  });
 
   // Helper: Calculate Progress Color
   const getProgressColor = (used: number, total: number) => {
@@ -233,8 +273,8 @@ export const SubscriptionsPanel = () => {
                       key={pkg.name}
                       onClick={() => handlePresetSelect(pkg)}
                       className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${formData.hours === pkg.hours && formData.basePrice === pkg.price
-                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
-                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                         }`}
                     >
                       {pkg.name}

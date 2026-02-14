@@ -1,15 +1,46 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Briefcase, GraduationCap, Plus, Search, Settings, X, CheckCircle2, Printer, Calendar, FileText } from 'lucide-react';
-import { MOCK_CONTRACTS } from '../mockData';
+import { supabase } from '../lib/supabase';
 import { Contract } from '../types';
 
-export const ContractsPanel = () => {
-  const [contracts, setContracts] = useState<Contract[]>(MOCK_CONTRACTS);
+export const ContractsPanel = ({ branchId }: { branchId?: string }) => {
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'business' | 'student'>('business');
   const [activeModal, setActiveModal] = useState<'add' | 'view' | null>(null);
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (branchId) fetchContracts();
+  }, [branchId]);
+
+  const fetchContracts = async () => {
+    setLoading(true);
+    const { data } = await (supabase as any)
+      .from('contracts')
+      .select('*')
+      .eq('branch_id', branchId);
+
+    if (data) {
+      const formatted: Contract[] = data.map(c => ({
+        id: c.id,
+        partner: c.partner_name,
+        type: (c.type as any) || 'Business',
+        discount: c.discount || '0%',
+        members: c.members || 0,
+        status: (c.status as any) || 'Active',
+        cashback: c.cashback || 0,
+        startDate: c.start_date || '',
+        endDate: c.end_date || '',
+        conditionsUs: c.conditions_us || [],
+        conditionsPartner: c.conditions_partner || []
+      }));
+      setContracts(formatted);
+    }
+    setLoading(false);
+  };
 
   // Form State
   const [formData, setFormData] = useState({
@@ -29,33 +60,33 @@ export const ContractsPanel = () => {
 
   const filteredContracts = contracts.filter(c => tab === 'business' ? c.type === 'Business' : c.type === 'Student');
 
-  const handleAddContract = () => {
+  const handleAddContract = async () => {
     if (!formData.partner || !formData.discount) return;
 
-    // Logic for Cashback
-    // If Business -> 0
-    // If Student -> Use global setting (as percentage value stored in cashback field for now to display)
     const cashbackValue = tab === 'business' ? 0 : Number(getStudentCashbackPercentage());
 
-    const newContract: Contract = {
-      id: `C-${Date.now()}`,
-      partner: formData.partner,
+    const { error } = await (supabase as any).from('contracts').insert({
+      branch_id: branchId,
+      partner_name: formData.partner,
       type: tab === 'business' ? 'Business' : 'Student',
       discount: formData.discount.includes('%') ? formData.discount : `${formData.discount}%`,
       members: Number(formData.members) || 0,
       status: 'Active',
-      cashback: cashbackValue, // For students, this now represents the PERCENTAGE. For Business, it's 0.
-      startDate: formData.startDate,
-      endDate: formData.endDate,
-      conditionsUs: formData.conditionsUs.split('\n').filter(Boolean),
-      conditionsPartner: formData.conditionsPartner.split('\n').filter(Boolean)
-    };
+      cashback: cashbackValue,
+      start_date: formData.startDate,
+      end_date: formData.endDate,
+      conditions_us: formData.conditionsUs.split('\n').filter(Boolean),
+      conditions_partner: formData.conditionsPartner.split('\n').filter(Boolean)
+    });
 
-    setContracts([newContract, ...contracts]);
-    setActiveModal(null);
-    setNotification('تم إضافة التعاقد بنجاح');
-    setTimeout(() => setNotification(null), 3000);
-    setFormData({ partner: '', discount: '', members: '', cashback: '', startDate: '', endDate: '', conditionsUs: '', conditionsPartner: '' });
+    if (error) alert(error.message);
+    else {
+      setActiveModal(null);
+      setNotification('تم إضافة التعاقد بنجاح');
+      setTimeout(() => setNotification(null), 3000);
+      fetchContracts();
+      setFormData({ partner: '', discount: '', members: '', cashback: '', startDate: '', endDate: '', conditionsUs: '', conditionsPartner: '' });
+    }
   };
 
   const openViewModal = (contract: Contract) => {

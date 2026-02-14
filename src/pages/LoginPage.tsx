@@ -1,15 +1,34 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Lock, Mail, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 export const LoginPage = () => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const navigate = useNavigate();
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        // TODO: Implement actual login logic
-        navigate('/dashboard');
+        setLoading(true);
+        setError(null);
+
+        try {
+            const { error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+
+            if (error) throw error;
+            navigate('/dashboard');
+        } catch (err: any) {
+            setError(err.message || 'فشل تسجيل الدخول');
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -30,6 +49,11 @@ export const LoginPage = () => {
                         </div>
                         <h1 className="text-3xl font-black text-white mb-2 tracking-tight">مرحباً بك مجدداً</h1>
                         <p className="text-slate-300 font-medium">سجل الدخول للمتابعة إلى Campus Hub</p>
+                        {error && (
+                            <div className="mt-4 p-3 bg-rose-500/20 border border-rose-500/50 rounded-xl text-rose-200 text-sm font-bold">
+                                {error}
+                            </div>
+                        )}
                     </div>
 
                     {/* Form */}
@@ -43,6 +67,8 @@ export const LoginPage = () => {
                                 <input
                                     type="email"
                                     placeholder="example@campus.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
                                     className="w-full bg-slate-900/50 border border-slate-700 text-right pr-12 pl-4 py-4 rounded-2xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-white placeholder:text-slate-600 transition-all group-hover/input:border-slate-600"
                                     required
                                 />
@@ -58,6 +84,8 @@ export const LoginPage = () => {
                                 <input
                                     type={showPassword ? "text" : "password"}
                                     placeholder="••••••••"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
                                     className="w-full bg-slate-900/50 border border-slate-700 text-right pr-12 pl-12 py-4 rounded-2xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-white placeholder:text-slate-600 transition-all group-hover/input:border-slate-600"
                                     required
                                 />
@@ -81,10 +109,11 @@ export const LoginPage = () => {
 
                         <button
                             type="submit"
-                            className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-black py-4 rounded-2xl shadow-lg shadow-indigo-600/30 hover:shadow-indigo-600/50 transform hover:-translate-y-1 transition-all duration-300 flex items-center justify-center gap-2 group/btn"
+                            disabled={loading}
+                            className={`w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-black py-4 rounded-2xl shadow-lg shadow-indigo-600/30 hover:shadow-indigo-600/50 transform hover:-translate-y-1 transition-all duration-300 flex items-center justify-center gap-2 group/btn ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                             <ArrowLeft size={20} className="group-hover/btn:-translate-x-1 transition-transform" />
-                            تسجيل الدخول
+                            {loading ? 'جاري التحميل...' : 'تسجيل الدخول'}
                         </button>
                     </form>
                 </div>

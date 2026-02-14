@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   TrendingUp, TrendingDown, PieChart, BarChart3,
   ArrowUpRight, DollarSign, Calendar, ChevronRight,
@@ -9,12 +9,19 @@ import {
 } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input } from '../components/ui';
-import { MOCK_FINANCIAL_REPORT } from '../mockData';
+import { supabase } from '../lib/supabase';
 
-export const FinancePanel = () => {
+export const FinancePanel = ({ branchId }: { branchId?: string }) => {
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly' | 'annual'>('daily');
-  const [currentDate, setCurrentDate] = useState(new Date('2024-10-30'));
-  const [viewDate, setViewDate] = useState(new Date('2024-10-01')); // For monthly navigation
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [viewDate, setViewDate] = useState(new Date());
+  const [dailyData, setDailyData] = useState({
+    income: 0,
+    expense: 0,
+    details: { catering: 0, rooms: 0, workspace: 0 }
+  });
+  const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Petty Cash (العهدة) State
   const [pettyTransactions, setPettyTransactions] = useState<Array<{ type: 'add' | 'withdraw', amount: number, note: string, date: string }>>([
@@ -51,10 +58,90 @@ export const FinancePanel = () => {
     }, { added: 0, withdrawn: 0 });
   }, [pettyTransactions]);
 
-  const dailyData = useMemo(() => {
+  useEffect(() => {
+    if (branchId) {
+      if (activeTab === 'daily') fetchDailyFinance();
+      else if (activeTab === 'monthly') fetchMonthlyFinance();
+    }
+  }, [branchId, currentDate, activeTab, viewDate]);
+
+  const fetchDailyFinance = async () => {
+    setLoading(true);
     const dateStr = currentDate.toISOString().split('T')[0];
-    return MOCK_FINANCIAL_REPORT.find(r => r.date === dateStr) || MOCK_FINANCIAL_REPORT[0];
-  }, [currentDate]);
+
+    // 1. Fetch Visits Income
+    const { data: visits } = await (supabase as any)
+      .from('visits')
+      .select('total_fee, service_id, services(service_type)')
+      .eq('branch_id', branchId)
+      .gte('check_in', `${dateStr}T00:00:00`)
+      .lte('check_in', `${dateStr}T23:59:59`);
+
+    // 2. Fetch Subscriptions Income
+    const { data: subs } = await (supabase as any)
+      .from('subscriptions')
+      .select('price')
+      .eq('branch_id', branchId)
+      .gte('created_at', `${dateStr}T00:00:00`)
+      .lte('created_at', `${dateStr}T23:59:59`);
+
+    let workspace = 0, rooms = 0, catering = 0;
+    visits?.forEach(v => {
+      const type = (v.services as any)?.service_type;
+      if (type === 'Room') rooms += v.total_fee;
+      else workspace += v.total_fee;
+    });
+
+    const subIncome = subs?.reduce((s, b) => s + (b.price || 0), 0) || 0;
+    const totalIncome = workspace + rooms + catering + subIncome;
+
+    setDailyData({
+      income: totalIncome,
+      expense: 0, // Mock for now until expense table exists
+      details: { catering, rooms, workspace: workspace + subIncome }
+    });
+    setLoading(false);
+  };
+
+  const fetchMonthlyFinance = async () => {
+    setLoading(true);
+    const firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).toISOString().split('T')[0];
+    const lastDay = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).toISOString().split('T')[0];
+
+    // 1. Fetch Monthly Visits
+    const { data: visits } = await (supabase as any)
+      .from('visits')
+      .select('total_fee, services(service_type)')
+      .eq('branch_id', branchId)
+      .gte('check_in', `${firstDay}T00:00:00`)
+      .lte('check_in', `${lastDay}T23:59:59`);
+
+    // 2. Fetch Monthly Subscriptions
+    const { data: subs } = await (supabase as any)
+      .from('subscriptions')
+      .select('price')
+      .eq('branch_id', branchId)
+      .gte('created_at', `${firstDay}T00:00:00`)
+      .lte('created_at', `${lastDay}T23:59:59`);
+
+    let workspace = 0, rooms = 0, catering = 0;
+    visits?.forEach((v: any) => {
+      const type = (v.services as any)?.service_type;
+      if (type === 'Room') rooms += v.total_fee;
+      else if (type === 'Catering') catering += v.total_fee;
+      else workspace += v.total_fee;
+    });
+
+    const subIncome = subs?.reduce((s: number, b: any) => s + (b.price || 0), 0) || 0;
+    const totalIncome = workspace + rooms + catering + subIncome;
+
+    setDailyData({
+      income: totalIncome,
+      expense: 0, // Mock until expense table exists
+      details: { catering, rooms, workspace: workspace + subIncome }
+    });
+    setLoading(false);
+  };
 
   const totalCountedCash = denominations.reduce((sum, den) => {
     const count = parseInt(cashDrawer[den] || '0');
@@ -91,8 +178,8 @@ export const FinancePanel = () => {
 
   const handleCloseMonth = () => {
     const monthKey = viewDate.toISOString().slice(0, 7);
-    const m_income = MOCK_FINANCIAL_REPORT.reduce((s, r) => s + r.income, 0) + pettyCashStats.added;
-    const m_expense = MOCK_FINANCIAL_REPORT.reduce((s, r) => s + r.expense, 0) + pettyCashStats.withdrawn;
+    const m_income = dailyData.income + pettyCashStats.added;
+    const m_expense = dailyData.expense + pettyCashStats.withdrawn;
 
     setClosedMonths({
       ...closedMonths,
@@ -200,10 +287,8 @@ export const FinancePanel = () => {
   );
 
   const renderMonthly = () => {
-    const sysIncome = MOCK_FINANCIAL_REPORT.reduce((s, r) => s + r.income, 0);
-    const sysExpense = MOCK_FINANCIAL_REPORT.reduce((s, r) => s + r.expense, 0);
-    const totalMonthlyIncome = sysIncome + pettyCashStats.added;
-    const totalMonthlyExpense = sysExpense + pettyCashStats.withdrawn;
+    const totalMonthlyIncome = dailyData.income; // Placeholder for now
+    const totalMonthlyExpense = dailyData.expense; // Placeholder for now
 
     return (
       <div className="space-y-8 animate-in fade-in duration-500">
@@ -296,24 +381,22 @@ export const FinancePanel = () => {
                     </tr>
                   ))}
                   {/* Daily Rows */}
-                  {MOCK_FINANCIAL_REPORT.map((row, i) => (
-                    <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-8 py-4 font-bold text-slate-700 text-sm">{row.date}</td>
-                      <td className="px-8 py-4 text-center text-[10px] text-slate-300">-</td>
-                      <td className="px-8 py-4 font-black text-slate-900 text-sm">{row.income.toLocaleString()} <span className="text-[10px] text-slate-400">ج.م</span></td>
-                      <td className="px-8 py-4 font-bold text-rose-500 text-sm">{row.expense.toLocaleString()} <span className="text-[10px] opacity-60">ج.م</span></td>
-                      <td className={`px-8 py-4 font-black text-sm text-left ${row.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {row.net.toLocaleString()} ج.م
-                      </td>
-                    </tr>
-                  ))}
+                  <tr className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-8 py-4 font-bold text-slate-700 text-sm">{currentDate.toLocaleDateString()}</td>
+                    <td className="px-8 py-4 text-center text-[10px] text-slate-300">-</td>
+                    <td className="px-8 py-4 font-black text-slate-900 text-sm">{dailyData.income.toLocaleString()} <span className="text-[10px] text-slate-400">ج.م</span></td>
+                    <td className="px-8 py-4 font-bold text-rose-500 text-sm">{dailyData.expense.toLocaleString()} <span className="text-[10px] opacity-60">ج.م</span></td>
+                    <td className={`px-8 py-4 font-black text-sm text-left ${dailyData.income - dailyData.expense >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {(dailyData.income - dailyData.expense).toLocaleString()} ج.م
+                    </td>
+                  </tr>
                 </tbody>
                 <tfoot className="bg-slate-900 text-white">
                   <tr>
                     <td colSpan={2} className="px-8 py-6 font-black text-lg">الإجمالي النهائي</td>
-                    <td className="px-8 py-6 font-black text-xl text-indigo-300">{totalMonthlyIncome.toLocaleString()} ج.م</td>
-                    <td className="px-8 py-6 font-black text-xl text-rose-300">{totalMonthlyExpense.toLocaleString()} ج.م</td>
-                    <td className="px-8 py-6 font-black text-2xl text-left bg-indigo-600 rounded-bl-[2.5rem]">{(totalMonthlyIncome - totalMonthlyExpense).toLocaleString()} ج.م</td>
+                    <td className="px-8 py-6 font-black text-xl text-indigo-300">{dailyData.income.toLocaleString()} ج.م</td>
+                    <td className="px-8 py-6 font-black text-xl text-rose-300">{dailyData.expense.toLocaleString()} ج.م</td>
+                    <td className="px-8 py-6 font-black text-2xl text-left bg-indigo-600 rounded-bl-[2.5rem]">{(dailyData.income - dailyData.expense).toLocaleString()} ج.م</td>
                   </tr>
                 </tfoot>
               </table>

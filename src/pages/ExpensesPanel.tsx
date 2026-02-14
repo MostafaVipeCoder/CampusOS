@@ -18,7 +18,7 @@ const EXPENSE_CATEGORIES = [
   { id: 'other', label: 'أخرى' },
 ];
 
-export const ExpensesPanel = () => {
+export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
   const [expenses, setExpenses] = useState([
     { id: 1, category: 'إيجار', amount: 15000, date: '2024-10-01', note: 'إيجار فرع Cloud أكتوبر', type: 'Fixed' },
     { id: 2, category: 'رواتب وأجور', amount: 12000, date: '2024-10-05', note: 'رواتب موظفي الاستقبال', type: 'Staff' },

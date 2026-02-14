@@ -3,7 +3,7 @@ import { CheckCircle2, QrCode } from 'lucide-react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import { QRCodeSVG } from 'qrcode.react';
 
-export const CheckinPortal = () => {
+export const CheckinPortal = ({ branchId }: { branchId?: string }) => {
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [scannedName, setScannedName] = useState<string>('');
 

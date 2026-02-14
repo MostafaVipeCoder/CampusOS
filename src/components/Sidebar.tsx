@@ -1,8 +1,18 @@
-import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 import { LayoutDashboard, UserCheck, ClipboardCheck, Users2, Award, Layers, Calendar, Wallet, Receipt, Package, Users, Settings, LogOut } from 'lucide-react';
 
 export const Sidebar = () => {
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      navigate('/login');
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
+  };
   const menuItems = [
     { id: 'dashboard', label: 'لوحة القيادة', path: '/dashboard', icon: LayoutDashboard },
     { id: 'checkin', label: 'بوابة الدخول', path: '/checkin', icon: UserCheck },
@@ -14,6 +24,7 @@ export const Sidebar = () => {
     { id: 'finance', label: 'المالية والتقارير', path: '/finance', icon: Wallet },
     { id: 'expenses', label: 'المصروفات', path: '/expenses', icon: Receipt },
     { id: 'inventory', label: 'المخزن', path: '/inventory', icon: Package },
+    { id: 'activities', label: 'الأنشطة', path: '/activities', icon: Calendar },
     { id: 'staff', label: 'المهام', path: '/staff', icon: Users },
     { id: 'settings', label: 'الإعدادات', path: '/settings', icon: Settings },
   ];
@@ -47,7 +58,10 @@ export const Sidebar = () => {
         ))}
       </nav>
       <div className="p-6 border-t border-white/5">
-        <button className="w-full flex items-center gap-4 px-4 py-3.5 text-rose-400 hover:bg-rose-400/10 rounded-2xl transition-all font-bold">
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-4 px-4 py-3.5 text-rose-400 hover:bg-rose-400/10 rounded-2xl transition-all font-bold"
+        >
           <LogOut size={20} /><span>تسجيل الخروج</span>
         </button>
       </div>

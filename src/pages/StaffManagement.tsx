@@ -1,17 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CheckSquare, Square, Clock, AlertCircle, Plus, X, Save, Sun, Moon, CalendarDays } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardContent, Input } from '../components/ui';
+import { supabase } from '../lib/supabase';
 
-export const StaffManagement = () => {
+export const StaffManagement = ({ branchId }: { branchId?: string }) => {
   const [activeShift, setActiveShift] = useState<'day' | 'night'>('day');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [tasks, setTasks] = useState([
-    { id: 1, task: 'التأكد من نظافة غرف الاجتماعات', status: 'done', time: '08:00 AM', shift: 'day', recurrence: 'يومي' },
-    { id: 2, task: 'مراجعة مخزون المشروبات والوجبات', status: 'pending', time: '09:30 AM', shift: 'day', recurrence: 'يومي' },
-    { id: 3, task: 'إرسال تقرير الحسابات الصباحي', status: 'pending', time: '11:00 AM', shift: 'day', recurrence: 'أسبوعي' },
-    { id: 4, task: 'جرد الخزينة المسائي', status: 'pending', time: '10:00 PM', shift: 'night', recurrence: 'يومي' },
-    { id: 5, task: 'تأمين المداخل والمخارج', status: 'pending', time: '11:30 PM', shift: 'night', recurrence: 'يومي' },
-  ]);
+  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] = useState<any[]>([]);
 
   const [newTask, setNewTask] = useState({
     name: '',
@@ -20,23 +16,74 @@ export const StaffManagement = () => {
     shift: 'day'
   });
 
-  const handleAddTask = () => {
-    if (!newTask.name || !newTask.time) return;
-    const task = {
-      id: Date.now(),
-      task: newTask.name,
-      status: 'pending' as const,
-      time: newTask.time,
-      shift: newTask.shift as 'day' | 'night',
-      recurrence: newTask.recurrence
-    };
-    setTasks([...tasks, task]);
-    setShowAddModal(false);
-    setNewTask({ name: '', time: '', recurrence: 'يومي', shift: 'day' });
+  useEffect(() => {
+    if (branchId) {
+      fetchTasks();
+    }
+  }, [branchId]);
+
+  const fetchTasks = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await (supabase as any)
+        .from('branch_tasks')
+        .select('*')
+        .eq('branch_id', branchId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setTasks(data || []);
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const toggleTask = (id: number) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, status: t.status === 'done' ? 'pending' : 'done' } : t));
+  const handleAddTask = async () => {
+    if (!newTask.name || !newTask.time || !branchId) return;
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from('branch_tasks')
+        .insert([{
+          task_name: newTask.name,
+          time: newTask.time,
+          shift: newTask.shift,
+          recurrence: newTask.recurrence,
+          status: 'pending',
+          branch_id: branchId
+        }])
+        .select();
+
+      if (error) throw error;
+
+      setTasks([...tasks, ...(data || [])]);
+      setShowAddModal(false);
+      setNewTask({ name: '', time: '', recurrence: 'يومي', shift: 'day' });
+    } catch (error) {
+      console.error('Error adding task:', error);
+    }
+  };
+
+  const toggleTask = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'done' ? 'pending' : 'done';
+
+    try {
+      // Optimistic update
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
+
+      const { error } = await (supabase as any)
+        .from('branch_tasks')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error toggling task:', error);
+      // Revert on error
+      fetchTasks();
+    }
   };
 
   const filteredTasks = tasks.filter(t => t.shift === activeShift);
@@ -79,17 +126,21 @@ export const StaffManagement = () => {
           </div>
 
           <div className="space-y-4">
-            {filteredTasks.length > 0 ? filteredTasks.map(task => (
+            {loading ? (
+              <div className="flex justify-center p-10">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+              </div>
+            ) : filteredTasks.length > 0 ? filteredTasks.map(task => (
               <div key={task.id} className={`p-6 rounded-3xl border transition-all flex items-center justify-between ${task.status === 'done' ? 'bg-slate-50 border-transparent opacity-60' : 'bg-white border-slate-100 shadow-sm hover:border-indigo-200'}`}>
                 <div className="flex items-center gap-6">
                   <button
-                    onClick={() => toggleTask(task.id)}
+                    onClick={() => toggleTask(task.id, task.status)}
                     className={`${task.status === 'done' ? 'text-emerald-500' : 'text-slate-300'}`}
                   >
                     {task.status === 'done' ? <CheckSquare size={28} /> : <Square size={28} />}
                   </button>
                   <div>
-                    <p className={`font-black ${task.status === 'done' ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.task}</p>
+                    <p className={`font-black ${task.status === 'done' ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.task_name}</p>
                     <div className="flex flex-wrap items-center gap-4 mt-2">
                       <div className="flex items-center gap-2">
                         <Clock size={12} className="text-slate-400" />

@@ -1,167 +1,251 @@
-import React, { useState } from 'react';
-import { UserPlus, Zap, Search, Filter, Coffee, LogOut, ChevronDown, Plus, Minus, X, Building2 } from 'lucide-react';
-import { CATERING_MENU, MOCK_SUBSCRIPTIONS } from '../mockData'; // Import SUBSCRIPTIONS for lookup
 
-// Types for local state
-interface SessionItem {
-  id: number;
-  name: string;
-  code: string;
-  service: string;
-  checkin: string;
-  checkout: string;
-  duration: string;
-  fee: number;
-  orders: { itemId: string; name: string; qty: number; price: number }[];
-  discount: number;
-  notes: string;
+import React, { useState, useEffect } from 'react';
+import { UserPlus, Zap, Search, Coffee, LogOut, ChevronDown, Plus, Minus, X, Building2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { format } from 'date-fns';
+
+// Database Types (Simplified)
+interface Visit {
+  id: string;
+  customer_id: string | null;
+  service_id: string | null;
+  check_in: string;
+  check_out: string | null;
+  status: string;
+  notes: string | null;
+  discount_amount: number;
+  base_fee: number;
+  total_fee: number;
+  customers?: { full_name: string; code: string } | null;
+  services?: { name: string; base_price: number } | null;
+  // Local derived properties for detailed view if needed, but we'll stick to joining
 }
 
-export const DailyLog = () => {
-  // Initial Mock Data wrapped in State
-  const [sessions, setSessions] = useState<SessionItem[]>([
-    {
-      id: 1, name: 'أحمد علي', code: 'C-201', service: 'Shared Space',
-      checkin: '09:00', checkout: '', duration: '3.5h', fee: 70,
-      orders: [{ itemId: 'c1', name: 'قهوة تركي', qty: 1, price: 25 }],
-      discount: 0, notes: ''
-    },
-    {
-      id: 2, name: 'ليلى حسن', code: 'C-205', service: 'Focus Room',
-      checkin: '10:30', checkout: '', duration: '2.0h', fee: 80,
-      orders: [],
-      discount: 0, notes: ''
-    },
-  ]);
+interface Service {
+  id: string;
+  name: string;
+  base_price: number;
+}
 
-  const [activePopover, setActivePopover] = useState<{ id: number, type: 'catering' | 'notes' } | null>(null);
-  const [activeModal, setActiveModal] = useState<'manual-login' | 'quick-booking' | 'hall-booking' | null>(null);
+const sb = supabase as any;
 
-  // Form States
-  const [manualForm, setManualForm] = useState({ code: '', service: 'Shared Space' });
-  const [quickForm, setQuickForm] = useState({ number: '' });
-  const [hallForm, setHallForm] = useState({ code: '', service: 'Room Booking' });
+export const DailyLog = ({ branchId }: { branchId?: string }) => {
+  const [sessions, setSessions] = useState<Visit[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [cateringItems, setCateringItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  // Modal & UI States
+  const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
+  const [activeModal, setActiveModal] = useState<'manual-login' | 'quick-booking' | 'hall-booking' | 'catering' | null>(null);
 
-  // Helper to calculate totals
-  const calculateTotal = (session: SessionItem) => {
-    const ordersTotal = session.orders.reduce((acc, curr) => acc + (curr.price * curr.qty), 0);
-    return (session.fee + ordersTotal) - session.discount;
+  // Forms
+  const [manualForm, setManualForm] = useState({ code: '', serviceId: '' });
+  const [quickForm, setQuickForm] = useState({ number: '', serviceId: '' });
+  const [hallForm, setHallForm] = useState({ code: '', serviceId: '' });
+
+  // 1. Helpers & Auth
+  const getBranchId = async () => {
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return null;
+    const { data: emp } = await sb.from('employees').select('branch_id').eq('id', user.id).single();
+    if (!emp?.branch_id) return null;
+    return emp.branch_id;
   };
 
-  // Helper: Get Current Time
-  const getCurrentTime = () => {
-    const now = new Date();
-    return now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+  // Initial Data Fetch
+  useEffect(() => {
+    const init = async () => {
+      const branchId = await getBranchId();
+      if (!branchId) return;
+
+      fetchServices(branchId);
+      fetchVisits(branchId);
+      fetchCateringItems(branchId);
+
+      // Realtime Subscription
+      const channel = sb
+        .channel('public:visits')
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'visits'
+        }, (payload: any) => {
+          if (payload.new && payload.new.branch_id === branchId) {
+            fetchVisits(branchId);
+          } else if (payload.old) {
+            fetchVisits(branchId);
+          }
+        })
+        .subscribe();
+
+      return () => { sb.removeChannel(channel); };
+    };
+    init();
+  }, []);
+
+  const fetchServices = async (branchId: string) => {
+    const { data } = await sb
+      .from('services')
+      .select('id, name, base_price')
+      .eq('branch_id', branchId)
+      .eq('service_type', 'room')
+      .eq('is_active', true);
+
+    if (data) {
+      setServices(data);
+      if (data.length > 0) {
+        const defaultId = data[0].id;
+        setManualForm(prev => ({ ...prev, serviceId: defaultId }));
+        setQuickForm(prev => ({ ...prev, serviceId: defaultId }));
+        setHallForm(prev => ({ ...prev, serviceId: defaultId }));
+      }
+    }
+  };
+
+  const fetchCateringItems = async (branchId: string) => {
+    const { data } = await sb.from('catering_items').select('*').eq('branch_id', branchId).eq('is_active', true);
+    if (data) setCateringItems(data);
+  };
+
+  const fetchVisits = async (branchId: string) => {
+    const today = new Date().toISOString().split('T')[0];
+    const { data, error } = await sb
+      .from('visits')
+      .select(`
+        *,
+        customers (full_name, code),
+        services (name, base_price)
+      `)
+      .eq('branch_id', branchId)
+      .or(`check_out.is.null,created_at.gte.${today}T00:00:00`)
+      .order('check_in', { ascending: false });
+
+    if (error) console.error('Error fetching visits:', error);
+    else setSessions(data || []);
+    setLoading(false);
   };
 
   // --- ACTIONS ---
 
-  const handleManualLogin = () => {
-    // Lookup client by code
-    const client = MOCK_SUBSCRIPTIONS.find(s => s.code === manualForm.code);
-    const name = client ? client.name : 'Unknown Client'; // Or handle error
+  const handleManualLogin = async () => {
+    if (!manualForm.code) return;
 
-    const newSession: SessionItem = {
-      id: Date.now(),
-      name: name,
-      code: manualForm.code,
-      service: manualForm.service,
-      checkin: getCurrentTime(),
-      checkout: '',
-      duration: '0h',
-      fee: 0, // Should be calculated based on service/time later
-      orders: [],
-      discount: 0,
-      notes: ''
-    };
+    // 1. Find Customer
+    const { data: customer, error: custError } = await sb
+      .from('customers')
+      .select('id, full_name, home_branch_id')
+      .eq('code', manualForm.code)
+      .single();
 
-    setSessions([newSession, ...sessions]);
-    setManualForm({ code: '', service: 'Shared Space' });
-    setActiveModal(null);
+    if (custError || !customer) {
+      alert('العميل غير موجود!');
+      return;
+    }
+
+    // 2. Get Service Price
+    const selectedService = services.find(s => s.id === manualForm.serviceId);
+    const baseFee = selectedService ? selectedService.base_price : 0;
+
+    // 3. Insert Visit
+    const branchId = await getBranchId();
+    if (!branchId) return;
+
+    const { error } = await sb.from('visits').insert({
+      customer_id: customer.id,
+      branch_id: branchId,
+      service_id: manualForm.serviceId,
+      check_in: new Date().toISOString(),
+      status: 'active',
+      base_fee: baseFee,
+      total_fee: baseFee // Initial total
+    });
+
+    if (error) alert(error.message);
+    else {
+      setManualForm({ ...manualForm, code: '' });
+      setActiveModal(null);
+      const bId = await getBranchId();
+      if (bId) fetchVisits(bId); // Immediate refresh for "real-time" feel
+    }
   };
 
-  const handleQuickBooking = () => {
+  const handleQuickBooking = async () => {
     if (!quickForm.number) return;
-    const generatedCode = `NA - ${quickForm.number} `;
 
-    const newSession: SessionItem = {
-      id: Date.now(),
-      name: `زائر ${quickForm.number} `, // Generic name
-      code: generatedCode,
-      service: 'Walk-in',
-      checkin: getCurrentTime(),
-      checkout: '',
-      duration: '0h',
-      fee: 0,
-      orders: [],
-      discount: 0,
-      notes: ''
-    };
+    // Get Service Price
+    const selectedService = services.find(s => s.id === quickForm.serviceId);
+    const baseFee = selectedService ? selectedService.base_price : 0;
 
-    setSessions([newSession, ...sessions]);
-    setQuickForm({ number: '' });
-    setActiveModal(null);
+    // Insert Walk-in
+    const branchId = await getBranchId();
+    if (!branchId) return;
+
+    const { error } = await sb.from('visits').insert({
+      customer_id: null, // Walk-in
+      branch_id: branchId,
+      service_id: quickForm.serviceId,
+      check_in: new Date().toISOString(),
+      status: 'active',
+      notes: `Walk-in #${quickForm.number}`,
+      base_fee: baseFee,
+      total_fee: baseFee
+    });
+
+    if (error) alert(error.message);
+    else {
+      setQuickForm({ ...quickForm, number: '' });
+      setActiveModal(null);
+      const bId = await getBranchId();
+      if (bId) fetchVisits(bId); // Immediate refresh for "real-time" feel
+    }
   };
 
-  const handleHallBooking = () => {
-    // Logic: Use Hall Code or Client Code
-    // For now, if code matches a "Room" config (not implemented yet for lookup), we could use that title.
-    // Assuming simple entry for now as requested.
+  const handleAddOrder = async (cateringId: string) => {
+    if (!selectedVisitId) return;
+    const item = cateringItems.find(i => i.id === cateringId);
+    if (!item) return;
 
-    const newSession: SessionItem = {
-      id: Date.now(),
-      name: `حجز قاعة(${hallForm.code})`, // Or client name if client code used
-      code: hallForm.code,
-      service: 'Room Booking',
-      checkin: getCurrentTime(),
-      checkout: '',
-      duration: '0h',
-      fee: 0,
-      orders: [],
-      discount: 0,
-      notes: ''
-    };
+    const { error } = await sb.from('visit_orders').insert({
+      visit_id: selectedVisitId,
+      catering_item_id: item.id,
+      quantity: 1,
+      unit_price: item.price,
+      total_price: item.price
+    });
 
-    setSessions([newSession, ...sessions]);
-    setHallForm({ code: '', service: 'Room Booking' });
-    setActiveModal(null);
-  }
-
-
-  // --- FIELD HANDLERS ---
-  const handleServiceChange = (id: number, newService: string) => {
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, service: newService } : s));
+    if (!error) {
+      const branchId = await getBranchId();
+      if (branchId) fetchVisits(branchId);
+      setActiveModal(null);
+    } else {
+      alert('خطأ في إضافة الطلب: ' + error.message);
+    }
   };
-  const handleTimeChange = (id: number, field: 'checkin' | 'checkout', value: string) => {
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
-  };
-  const handleAddOrder = (sessionId: number, item: typeof CATERING_MENU[0]) => {
-    setSessions(prev => prev.map(s => {
-      if (s.id !== sessionId) return s;
-      const existingOrder = s.orders.find(o => o.itemId === item.id);
-      let newOrders;
-      if (existingOrder) newOrders = s.orders.map(o => o.itemId === item.id ? { ...o, qty: o.qty + 1 } : o);
-      else newOrders = [...s.orders, { itemId: item.id, name: item.name, price: item.price, qty: 1 }];
 
-      // Simulate Real-time Inventory Deduction
-      console.log(`[Inventory] Deducting stock for ${item.name}`);
+  const handleCheckout = async (visitId: string) => {
+    const { error } = await sb
+      .from('visits')
+      .update({
+        check_out: new Date().toISOString(),
+        status: 'completed'
+      })
+      .eq('id', visitId);
 
-      return { ...s, orders: newOrders };
-    }));
+    if (error) alert('Error checking out: ' + error.message);
   };
-  const handleUpdateOrderQty = (sessionId: number, itemId: string, delta: number) => {
-    setSessions(prev => prev.map(s => {
-      if (s.id !== sessionId) return s;
-      const newOrders = s.orders.map(o => o.itemId === itemId ? { ...o, qty: Math.max(0, o.qty + delta) } : o).filter(o => o.qty > 0);
-      return { ...s, orders: newOrders };
-    }));
+
+  // --- HELPERS ---
+  const formatTime = (isoString: string | null) => {
+    if (!isoString) return '--:--';
+    return new Date(isoString).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
   };
-  const handleDiscountChange = (id: number, value: string) => {
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, discount: parseFloat(value) || 0 } : s));
-  };
-  const handleNotesChange = (id: number, value: string) => {
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, notes: value } : s));
+
+  const calculateDuration = (start: string, end: string | null) => {
+    const startTime = new Date(start).getTime();
+    const endTime = end ? new Date(end).getTime() : new Date().getTime();
+    const diffHrs = (endTime - startTime) / (1000 * 60 * 60);
+    return diffHrs.toFixed(1) + 'h';
   };
 
   return (
@@ -192,15 +276,6 @@ export const DailyLog = () => {
             <Zap size={20} className="text-amber-500" />
             <span>حجز سريع</span>
           </button>
-
-          {/* Hall Booking Button */}
-          <button
-            onClick={() => setActiveModal('hall-booking')}
-            className="bg-slate-900 text-white border border-slate-800 px-5 py-3 rounded-2xl font-black hover:bg-slate-800 transition-all flex items-center gap-2 shadow-lg shadow-slate-200"
-          >
-            <Building2 size={20} />
-            <span>حجز قاعة</span>
-          </button>
         </div>
       </div>
 
@@ -228,156 +303,84 @@ export const DailyLog = () => {
                 <th className="px-4 py-4 w-40">الخدمة</th>
                 <th className="px-4 py-4 w-32 text-center">دخول / خروج</th>
                 <th className="px-4 py-4 w-48 text-center">الطلبات</th>
-                <th className="px-4 py-4 w-24 text-center">الخصم</th>
                 <th className="px-4 py-4 w-32 text-center">ملاحظات</th>
                 <th className="px-4 py-4 w-32 text-center">الإجمالي</th>
                 <th className="px-6 py-4 w-32 text-left">إجراء</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {sessions.map(session => (
+              {loading ? (
+                <tr><td colSpan={7} className="text-center py-8 text-slate-400">جاري التحميل...</td></tr>
+              ) : sessions.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-8 text-slate-400">لا توجد جلسات حالياً</td></tr>
+              ) : sessions.map(session => (
                 <tr key={session.id} className="hover:bg-indigo-50/10 transition-all font-bold group">
 
                   {/* Client Info */}
                   <td className="px-6 py-4">
-                    <p className="text-slate-800 font-black text-sm">{session.name}</p>
-                    <p className="text-[10px] text-indigo-500 font-mono tracking-widest">{session.code}</p>
+                    <p className="text-slate-800 font-black text-sm">{session.customers?.full_name || session.notes || 'زائر'}</p>
+                    <p className="text-[10px] text-indigo-500 font-mono tracking-widest">{session.customers?.code || '#'}</p>
                   </td>
 
-                  {/* Service Selection */}
+                  {/* Service */}
                   <td className="px-4 py-4">
-                    <div className="relative">
-                      <select
-                        className="w-full bg-slate-50 border border-slate-200 text-xs rounded-xl px-3 py-2 outline-none focus:border-indigo-500 appearance-none font-bold text-slate-600"
-                        value={session.service}
-                        onChange={(e) => handleServiceChange(session.id, e.target.value)}
-                      >
-                        <option>Shared Space</option>
-                        <option>Focus Room</option>
-                        <option>Meeting Room</option>
-                        <option>Walk-in</option>
-                        <option>Room Booking</option>
-                      </select>
-                      <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                    </div>
+                    <span className="text-xs text-slate-600">{session.services?.name || 'Unknown'}</span>
                   </td>
 
                   {/* Check-in/out Times */}
                   <td className="px-4 py-4 text-center">
                     <div className="flex flex-col gap-1 items-center">
-                      <input
-                        type="time"
-                        value={session.checkin}
-                        onChange={(e) => handleTimeChange(session.id, 'checkin', e.target.value)}
-                        className="bg-transparent text-emerald-600 font-mono text-xs font-black text-center outline-none hover:bg-slate-50 rounded"
-                      />
-                      <input
-                        type="time"
-                        value={session.checkout}
-                        placeholder="--:--"
-                        onChange={(e) => handleTimeChange(session.id, 'checkout', e.target.value)}
-                        className="bg-transparent text-slate-400 font-mono text-[10px] text-center outline-none hover:bg-slate-50 rounded placeholder:text-slate-300"
-                      />
+                      <span className="text-emerald-600 font-mono text-xs font-black">{formatTime(session.check_in)}</span>
+                      <span className="text-slate-400 font-mono text-[10px]">{formatTime(session.check_out)}</span>
                     </div>
                   </td>
 
                   {/* Catering Orders */}
                   <td className="px-4 py-4 text-center relative">
                     <button
-                      onClick={() => setActivePopover(activePopover?.id === session.id && activePopover.type === 'catering' ? null : { id: session.id, type: 'catering' })}
-                      className={`mx - auto px - 3 py - 1.5 rounded - xl text - xs flex items - center gap - 2 transition - all ${session.orders.length > 0 ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-slate-50 text-slate-400 border border-slate-200 hover:border-amber-300 hover:text-amber-600'} `}
+                      onClick={() => { setSelectedVisitId(session.id); setActiveModal('catering'); }}
+                      className={`mx-auto px-3 py-1.5 rounded-xl text-xs flex items-center gap-2 transition-all ${session.total_fee > session.base_fee
+                        ? 'bg-amber-50 text-amber-600 border-amber-200'
+                        : 'bg-slate-50 text-slate-400 border border-slate-200 hover:border-amber-300 hover:text-amber-500'
+                        }`}
                     >
                       <Coffee size={14} />
-                      <span>{session.orders.length > 0 ? `${session.orders.reduce((p, c) => p + (c.price * c.qty), 0)} EGP` : 'إضافة طلب'}</span>
+                      <span>{session.total_fee - session.base_fee} EGP</span>
                     </button>
-
-                    {/* Catering Popover */}
-                    {activePopover?.id === session.id && activePopover.type === 'catering' && (
-                      <div className="absolute top-12 left-1/2 -translate-x-1/2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 p-3 animate-in fade-in zoom-in-95 duration-200">
-                        <div className="flex justify-between items-center mb-2 px-1">
-                          <h4 className="text-xs font-black text-slate-700">قائمة المشروبات</h4>
-                          <button onClick={() => setActivePopover(null)}><X size={14} className="text-slate-400 hover:text-rose-500" /></button>
-                        </div>
-                        <div className="max-h-48 overflow-y-auto space-y-1 mb-3">
-                          {CATERING_MENU.map(item => {
-                            const orderItem = session.orders.find(o => o.itemId === item.id);
-                            return (
-                              <div key={item.id} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg group/item">
-                                <div>
-                                  <p className="text-xs font-bold text-slate-800">{item.name}</p>
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-[10px] text-slate-400">{item.price} EGP</p>
-                                    <span className="text-[9px] bg-emerald-50 text-emerald-600 px-1.5 rounded font-black border border-emerald-100 italic">In Stock</span>
-                                  </div>
-                                </div>
-                                {orderItem ? (
-                                  <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-1">
-                                    <button onClick={() => handleUpdateOrderQty(session.id, item.id, -1)} className="p-1 hover:bg-slate-100 rounded-md"><Minus size={10} /></button>
-                                    <span className="text-xs font-bold w-3 text-center">{orderItem.qty}</span>
-                                    <button onClick={() => handleUpdateOrderQty(session.id, item.id, 1)} className="p-1 hover:bg-slate-100 rounded-md text-indigo-600"><Plus size={10} /></button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => handleAddOrder(session.id, item)}
-                                    className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg opacity-0 group-hover/item:opacity-100 transition-opacity"
-                                  >
-                                    <Plus size={14} />
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </td>
-
-                  {/* Discount */}
-                  <td className="px-4 py-4 text-center">
-                    <input
-                      type="number"
-                      value={session.discount > 0 ? session.discount : ''}
-                      placeholder="-"
-                      onChange={(e) => handleDiscountChange(session.id, e.target.value)}
-                      className="w-16 text-center text-xs font-black text-rose-500 bg-transparent border-b border-transparent hover:border-slate-200 focus:border-rose-500 outline-none placeholder:text-slate-300"
-                    />
                   </td>
 
                   {/* Notes */}
-                  <td className="px-4 py-4 text-center relative">
-                    <div className="relative group/notes">
-                      <textarea
-                        className="w-full h-8 bg-transparent text-xs text-slate-500 resize-none outline-none border border-transparent hover:border-slate-200 focus:border-indigo-300 rounded-lg p-1 transition-all"
-                        placeholder="ملاحظات..."
-                        value={session.notes}
-                        onChange={(e) => handleNotesChange(session.id, e.target.value)}
-                      ></textarea>
-                    </div>
+                  <td className="px-4 py-4 text-center">
+                    <span className="text-xs text-slate-400 truncate max-w-[100px] block mx-auto">{session.notes || '-'}</span>
                   </td>
 
                   {/* Total */}
                   <td className="px-4 py-4 text-center">
-                    <span className={`text - sm font - black ${calculateTotal(session) > 100 ? 'text-indigo-600' : 'text-slate-700'} `}>
-                      {calculateTotal(session)} <span className="text-[10px] text-slate-400 font-bold">EGP</span>
+                    <span className="text-sm font-black text-slate-700">
+                      {session.total_fee || session.base_fee} <span className="text-[10px] text-slate-400 font-bold">EGP</span>
                     </span>
                   </td>
 
                   {/* Check-out Action */}
                   <td className="px-6 py-4 text-left">
-                    <button className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-black hover:bg-rose-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-slate-200 hover:shadow-rose-200 w-full group/btn">
-                      <LogOut size={14} className="group-hover/btn:-translate-x-1 transition-transform" />
-                      <span>إنهاء</span>
-                    </button>
+                    {!session.check_out ? (
+                      <button
+                        onClick={() => handleCheckout(session.id)}
+                        className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-black hover:bg-rose-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-slate-200 hover:shadow-rose-200 w-full group/btn"
+                      >
+                        <LogOut size={14} className="group-hover/btn:-translate-x-1 transition-transform" />
+                        <span>إنهاء</span>
+                      </button>
+                    ) : (
+                      <span className="text-xs font-bold text-slate-400 flex items-center gap-1 justify-center">
+                        مكتمل
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-
-          {/* Backdrop for Popovers */}
-          {activePopover && (
-            <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setActivePopover(null)}></div>
-          )}
         </div>
       </div>
 
@@ -399,23 +402,20 @@ export const DailyLog = () => {
                   type="text"
                   value={manualForm.code}
                   onChange={(e) => setManualForm({ ...manualForm, code: e.target.value })}
-                  placeholder="أدخل كود العميل (مثال: C-101)"
+                  placeholder="مثال: CMP-2024-001"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-800 focus:border-indigo-500 outline-none"
                   autoFocus
                 />
-                <p className="text-[10px] text-slate-400 mt-1">سيتم جلب الاسم تلقائياً بناءً على الكود.</p>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1">نوع الخدمة</label>
                 <select
-                  value={manualForm.service}
-                  onChange={(e) => setManualForm({ ...manualForm, service: e.target.value })}
+                  value={manualForm.serviceId}
+                  onChange={(e) => setManualForm({ ...manualForm, serviceId: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-800 focus:border-indigo-500 outline-none"
                 >
-                  <option>Shared Space</option>
-                  <option>Focus Room</option>
-                  <option>Meeting Room</option>
+                  {services.map(s => <option key={s.id} value={s.id}>{s.name} ({s.base_price} EGP)</option>)}
                 </select>
               </div>
             </div>
@@ -438,7 +438,7 @@ export const DailyLog = () => {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">رقم الإيصال / الزائر</label>
+                <label className="block text-xs font-bold text-slate-500 mb-1">رقم الزائر</label>
                 <input
                   type="number"
                   value={quickForm.number}
@@ -447,7 +447,17 @@ export const DailyLog = () => {
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-800 focus:border-amber-500 outline-none"
                   autoFocus
                 />
-                <p className="text-[10px] text-slate-400 mt-1">سيتم إنشاء كود تلقائي بصيغة NA-رقم</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">نوع الخدمة</label>
+                <select
+                  value={quickForm.serviceId}
+                  onChange={(e) => setQuickForm({ ...quickForm, serviceId: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-800 focus:border-amber-500 outline-none"
+                >
+                  {services.map(s => <option key={s.id} value={s.id}>{s.name} ({s.base_price} EGP)</option>)}
+                </select>
               </div>
             </div>
 
@@ -458,31 +468,61 @@ export const DailyLog = () => {
         </div>
       )}
 
-      {/* 3. Hall Booking Modal */}
-      {activeModal === 'hall-booking' && (
+      {/* 4. Catering Selection Modal */}
+      {activeModal === 'catering' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 border border-slate-100">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><Building2 size={24} className="text-slate-600" /> حجز قاعة</h3>
+              <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><Coffee size={24} className="text-amber-500" /> إضافة طلب كاترينج</h3>
               <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={20} className="text-slate-400" /></button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">كود القاعة / كود العميل</label>
-                <input
-                  type="text"
-                  value={hallForm.code}
-                  onChange={(e) => setHallForm({ ...hallForm, code: e.target.value })}
-                  placeholder="أدخل الكود"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-800 focus:border-slate-500 outline-none"
-                  autoFocus
-                />
-              </div>
+            <div className="grid grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
+              {cateringItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => handleAddOrder(item.id)}
+                  className="p-4 bg-slate-50 border border-slate-200 rounded-2xl hover:border-amber-500 hover:bg-amber-50 transition-all text-right group"
+                >
+                  <p className="font-black text-slate-800 text-sm group-hover:text-amber-700">{item.name}</p>
+                  <p className="text-xs font-bold text-amber-600 mt-1">{item.price} EGP</p>
+                </button>
+              ))}
+              {cateringItems.length === 0 && (
+                <div className="col-span-2 py-8 text-center text-slate-400 font-bold">
+                  لا توجد أصناف في قائمة الكاترينج حالياً.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Catering Selection Modal */}
+      {activeModal === 'catering' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 border border-slate-100">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><Coffee size={24} className="text-amber-500" /> إضافة طلب كاترينج</h3>
+              <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={20} className="text-slate-400" /></button>
             </div>
 
-            <div className="mt-8">
-              <button onClick={handleHallBooking} className="w-full bg-slate-900 text-white py-4 rounded-xl font-black hover:bg-slate-800 transition-all shadow-lg">بدء الحجز</button>
+            <div className="grid grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
+              {cateringItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => handleAddOrder(item.id)}
+                  className="p-4 bg-slate-50 border border-slate-200 rounded-2xl hover:border-amber-500 hover:bg-amber-50 transition-all text-right group"
+                >
+                  <p className="font-black text-slate-800 text-sm group-hover:text-amber-700">{item.name}</p>
+                  <p className="text-xs font-bold text-amber-600 mt-1">{item.price} EGP</p>
+                </button>
+              ))}
+              {cateringItems.length === 0 && (
+                <div className="col-span-2 py-8 text-center text-slate-400 font-bold">
+                  لا توجد أصناف في قائمة الكاترينج حالياً.
+                </div>
+              )}
             </div>
           </div>
         </div>

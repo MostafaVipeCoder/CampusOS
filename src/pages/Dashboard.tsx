@@ -5,7 +5,7 @@ import { StatCard } from '../components/StatCard';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui';
 import { supabase } from '../lib/supabase';
 
-export const Dashboard = () => {
+export const Dashboard = ({ branchId }: { branchId?: string }) => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     presentNow: 0,
@@ -19,8 +19,8 @@ export const Dashboard = () => {
   });
 
   useEffect(() => {
-    fetchDashboardStats();
-  }, []);
+    if (branchId) fetchDashboardStats();
+  }, [branchId]);
 
   const fetchDashboardStats = async () => {
     setLoading(true);
@@ -33,6 +33,7 @@ export const Dashboard = () => {
       const { count: presentNow, error: err1 } = await supabase
         .from('visits')
         .select('*', { count: 'exact', head: true })
+        .eq('branch_id', branchId)
         .is('check_out', null);
       if (err1) throw err1;
 
@@ -40,6 +41,7 @@ export const Dashboard = () => {
       const { data: visitsToday, error: err2 } = await supabase
         .from('visits')
         .select('paid_amount')
+        .eq('branch_id', branchId)
         .gte('created_at', todayISO);
       if (err2) throw err2;
       const dailyRevenue = visitsToday?.reduce((acc, v) => acc + (Number(v.paid_amount) || 0), 0) || 0;
@@ -48,15 +50,70 @@ export const Dashboard = () => {
       const { count: newMembersToday, error: err3 } = await supabase
         .from('customers')
         .select('*', { count: 'exact', head: true })
+        .eq('home_branch_id', branchId)
         .gte('created_at', todayISO);
       if (err3) throw err3;
+
+      // 4. Subscriptions
+      const { data: subs, error: err4 } = await supabase
+        .from('subscriptions')
+        .select('status')
+        .eq('branch_id', branchId);
+      if (err4) throw err4;
+
+      const totalSubscriptions = subs?.length || 0;
+      const activeSubscriptions = subs?.filter(s => s.status === 'Active').length || 0;
+      const expiredSubscriptions = totalSubscriptions - activeSubscriptions;
+
+      // 5. Room Occupancy (Mock logic based on bookings today vs total capacity)
+      const { count: activeBookings } = await supabase
+        .from('bookings')
+        .select('*', { count: 'exact', head: true })
+        .eq('branch_id', branchId)
+        .eq('booking_date', today.toISOString().split('T')[0])
+        .eq('status', 'Confirmed');
+
+      const { data: rooms } = await supabase
+        .from('services')
+        .select('capacity')
+        .eq('branch_id', branchId)
+        .eq('service_type', 'Room');
+
+      const totalCapacity = rooms?.reduce((acc, r) => acc + (r.capacity || 0), 0) || 10; // Default 10 if no rooms
+      const roomOccupancy = Math.min(100, Math.round(((activeBookings || 0) / totalCapacity) * 100));
 
       setStats(prev => ({
         ...prev,
         presentNow: presentNow || 0,
         dailyRevenue,
         newMembersToday: newMembersToday || 0,
+        totalSubscriptions,
+        activeSubscriptions,
+        expiredSubscriptions,
+        roomOccupancy,
       }));
+
+      // 6. Retention Rate (% of customers with > 1 visit)
+      const { data: allVisits, error: err6 } = await supabase
+        .from('visits')
+        .select('customer_id')
+        .eq('branch_id', branchId);
+
+      if (!err6 && allVisits) {
+        const customerVisitCounts = allVisits.reduce((acc: any, v) => {
+          if (v.customer_id) {
+            acc[v.customer_id] = (acc[v.customer_id] || 0) + 1;
+          }
+          return acc;
+        }, {});
+
+        const totalCustomers = Object.keys(customerVisitCounts).length;
+        const recurringCustomers = Object.values(customerVisitCounts).filter((count: any) => count > 1).length;
+        const retentionRate = totalCustomers > 0 ? Math.round((recurringCustomers / totalCustomers) * 100) : 0;
+
+        setStats(prev => ({ ...prev, retentionRate }));
+      }
+
     } catch (error: any) {
       console.error('Error fetching dashboard stats:', error);
     } finally {

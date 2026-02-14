@@ -1,31 +1,67 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronRight, ChevronLeft, Plus, Award, Clock, MoreVertical, TrendingUp, Calendar, Users, Monitor, PenTool, Armchair, X, CheckCircle2 } from 'lucide-react';
-import { ROOMS_CONFIG, MOCK_BOOKINGS } from '../mockData';
-import { Booking } from '../types';
+import { supabase } from '../lib/supabase';
+import { Booking, RoomConfig } from '../types';
 
-export const BookingsManager = () => {
-  const [selectedRoom, setSelectedRoom] = useState<string>('all'); // 'all' or room ID
+export const BookingsManager = ({ branchId }: { branchId?: string }) => {
+  const [selectedRoom, setSelectedRoom] = useState<string>('all');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activeModal, setActiveModal] = useState<'add' | null>(null);
-  const [bookings, setBookings] = useState<Booking[]>(MOCK_BOOKINGS);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [rooms, setRooms] = useState<RoomConfig[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // New Booking Form State
-  const [bookingForm, setBookingForm] = useState({
-    user: '',
-    userCode: '',
-    room: '',
-    date: new Date().toISOString().split('T')[0],
-    startTime: '09:00',
-    duration: 1,
-    attendees: 1,
-    extras: {
-      chairs: false,
-      screen: false,
-      board: false,
-      markers: false
+  useEffect(() => {
+    if (branchId) {
+      fetchRooms();
+      fetchBookings();
     }
-  });
+  }, [branchId]);
+
+  const fetchRooms = async () => {
+    const { data } = await supabase
+      .from('services')
+      .select('*')
+      .eq('branch_id', branchId)
+      .eq('service_type', 'Room')
+      .eq('is_active', true);
+
+    if (data) {
+      const formatted: RoomConfig[] = data.map(r => ({
+        id: r.id,
+        name: r.name_ar || r.name,
+        hourlyRate: r.base_price,
+        capacity: r.capacity || 0
+      }));
+      setRooms(formatted);
+    }
+  };
+
+  const fetchBookings = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('branch_id', branchId);
+
+    if (data) {
+      const formatted: Booking[] = data.map(b => ({
+        id: b.id,
+        room: b.service_id,
+        user: b.user_name || 'عميل',
+        userCode: b.user_code,
+        date: b.booking_date,
+        startTime: b.start_time,
+        duration: b.duration,
+        type: (b.type as any) || 'Reserved',
+        attendees: b.attendees,
+        extras: b.extras as any
+      }));
+      setBookings(formatted);
+    }
+    setLoading(false);
+  };
 
   const hours = Array.from({ length: 14 }, (_, i) => i + 8); // 8 AM to 9 PM
 
@@ -47,9 +83,8 @@ export const BookingsManager = () => {
     );
   };
 
-  const handleCreateBooking = () => {
-    // Validate Capacity
-    const room = ROOMS_CONFIG.find(r => r.id === bookingForm.room);
+  const handleCreateBooking = async () => {
+    const room = rooms.find(r => r.id === bookingForm.room);
     if (room && bookingForm.attendees > room.capacity) {
       alert(`عفواً، سعة الغرفة ${room.capacity} فرد فقط.`);
       return;
@@ -57,14 +92,13 @@ export const BookingsManager = () => {
 
     const startHour = parseInt(bookingForm.startTime.split(':')[0]);
 
-    // Create Booking
-    const newBooking: Booking = {
-      id: `BK-${Date.now()}`,
-      room: bookingForm.room,
-      user: bookingForm.user,
-      userCode: bookingForm.userCode,
-      date: bookingForm.date,
-      startTime: startHour,
+    const { error } = await supabase.from('bookings').insert({
+      branch_id: branchId,
+      service_id: bookingForm.room,
+      user_name: bookingForm.user,
+      user_code: bookingForm.userCode,
+      booking_date: bookingForm.date,
+      start_time: startHour,
       duration: Number(bookingForm.duration),
       type: 'Reserved',
       attendees: Number(bookingForm.attendees),
@@ -74,11 +108,30 @@ export const BookingsManager = () => {
         whiteboard: bookingForm.extras.board,
         markers: bookingForm.extras.markers
       }
-    };
+    });
 
-    setBookings([...bookings, newBooking]);
-    setActiveModal(null);
+    if (error) alert(error.message);
+    else {
+      setActiveModal(null);
+      fetchBookings();
+    }
   };
+
+  const [bookingForm, setBookingForm] = useState({
+    user: '',
+    userCode: '',
+    room: '',
+    date: new Date().toISOString().split('T')[0],
+    startTime: '09:00',
+    duration: 1,
+    attendees: 1,
+    extras: {
+      chairs: false,
+      screen: false,
+      board: false,
+      markers: false
+    }
+  });
 
   const renderWeekView = () => {
     const weekDays = getWeekDays(currentDate);
@@ -147,7 +200,7 @@ export const BookingsManager = () => {
           </div>
 
           <div className="flex-1 grid grid-cols-5 divide-x divide-x-reverse divide-slate-100">
-            {ROOMS_CONFIG.map(room => (
+            {rooms.map(room => (
               <div key={room.id} className="relative group min-h-full">
                 {/* Column Header (Room) */}
                 <div className="sticky top-0 z-10 bg-white border-b border-slate-100 p-4 text-center">
@@ -196,7 +249,7 @@ export const BookingsManager = () => {
           >
             كل الغرف (يومي)
           </button>
-          {ROOMS_CONFIG.map(room => (
+          {rooms.map(room => (
             <button
               key={room.id}
               onClick={() => setSelectedRoom(room.id)}
@@ -247,7 +300,7 @@ export const BookingsManager = () => {
               <div className="col-span-2">
                 <label className="block text-xs font-bold text-slate-500 mb-2">اختر الغرفة / المساحة</label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {ROOMS_CONFIG.map(room => (
+                  {rooms.map(room => (
                     <button
                       key={room.id}
                       onClick={() => setBookingForm({ ...bookingForm, room: room.id })}
