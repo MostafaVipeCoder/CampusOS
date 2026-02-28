@@ -41,7 +41,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
 // --- Card ---
 export const Card = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('rounded-[2rem] border border-slate-200 bg-white text-slate-950 shadow-sm', className)} {...props} />
+  <div className={cn('glass rounded-[2rem] text-slate-950 transition-all duration-300 hover:shadow-2xl hover:shadow-indigo-500/5', className)} {...props} />
 );
 
 export const CardHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

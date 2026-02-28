@@ -39,15 +39,15 @@ export const CheckinPortal = ({ branchId }: { branchId?: string }) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 w-full max-w-6xl mx-auto items-center">
 
         {/* Scanner Section */}
-        <div className="bg-white rounded-[3rem] p-8 shadow-2xl border-4 border-indigo-50 relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 pointer-events-none"></div>
+        <div className="glass rounded-[3rem] p-8 lg:p-12 relative overflow-hidden group hover:shadow-2xl hover:shadow-indigo-500/10 transition-shadow duration-500">
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-violet-500/5 pointer-events-none"></div>
 
-          <div className="text-center mb-8">
-            <h2 className="text-3xl font-black text-slate-800 mb-2">تسجيل حضور الأعضاء</h2>
-            <p className="text-slate-500 font-bold">يرجى وضع QR Code أمام الكاميرا</p>
+          <div className="text-center mb-8 relative">
+            <h2 className="text-3xl lg:text-4xl font-black text-slate-800 mb-3 tracking-tight">تسجيل حضور الأعضاء</h2>
+            <p className="text-slate-500 font-bold text-lg">يرجى وضع QR Code أمام الكاميرا</p>
           </div>
 
-          <div className="relative rounded-[2rem] overflow-hidden border-4 border-indigo-100 shadow-inner aspect-square max-w-md mx-auto bg-slate-100">
+          <div className="relative rounded-[2rem] overflow-hidden shadow-[inset_0_4px_20px_rgba(0,0,0,0.05)] aspect-square max-w-md mx-auto bg-slate-900 ring-4 ring-white/50 group-hover:ring-indigo-100 transition-all duration-500">
             <Scanner
               onScan={handleScan}
               sound={false}
@@ -59,19 +59,23 @@ export const CheckinPortal = ({ branchId }: { branchId?: string }) => {
               }}
             />
             {/* Scanning Overlay Animation */}
-            <div className="absolute inset-0 border-2 border-indigo-500/30 rounded-[2rem] pointer-events-none"></div>
-            <div className="absolute h-1 w-full bg-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.5)] top-1/2 -translate-y-1/2 animate-[scan_2s_ease-in-out_infinite] opacity-50 pointer-events-none"></div>
+            <div className="absolute inset-0 border-2 border-indigo-500/30 rounded-[2rem] pointer-events-none transition-colors duration-500"></div>
+            <div className="absolute h-1 w-full bg-gradient-to-r from-transparent via-indigo-500 to-transparent shadow-[0_0_30px_rgba(99,102,241,0.8)] top-1/2 -translate-y-1/2 animate-[scan_3s_ease-in-out_infinite] opacity-60 pointer-events-none"></div>
           </div>
 
-          <div className="mt-8 flex justify-center items-center gap-3 text-indigo-500 opacity-60">
-            <QrCode className="animate-pulse" />
-            <span className="text-xs font-black tracking-widest uppercase">Scanner Active</span>
+          <div className="mt-10 flex justify-center items-center gap-3 text-indigo-500 opacity-60 peer">
+            <div className="relative flex items-center justify-center p-2 rounded-xl bg-indigo-50">
+              <QrCode className="animate-pulse" size={24} />
+              <div className="absolute inset-0 bg-indigo-400 rounded-xl blur animate-ping opacity-20"></div>
+            </div>
+            <span className="text-sm font-black tracking-widest uppercase">Scanner Active</span>
           </div>
         </div>
 
         {/* Registration Section */}
-        <div className="bg-slate-900 rounded-[3rem] p-12 text-center text-white shadow-2xl relative overflow-hidden flex flex-col items-center justify-between h-full min-h-[500px]">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 rounded-full blur-[100px] opacity-20 -translate-y-1/2 translate-x-1/2"></div>
+        <div className="bg-[#0B0F19] rounded-[3rem] p-12 text-center text-white shadow-2xl relative overflow-hidden flex flex-col items-center justify-between h-full min-h-[500px] border border-white/10 group hover:shadow-indigo-500/20 transition-shadow duration-500">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/30 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3 group-hover:bg-indigo-500/40 transition-colors duration-700"></div>
+          <div className="absolute bottom-0 left-0 w-80 h-80 bg-violet-600/30 rounded-full blur-[100px] translate-y-1/2 -translate-x-1/3 group-hover:bg-violet-500/40 transition-colors duration-700"></div>
           <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500 rounded-full blur-[100px] opacity-20 translate-y-1/2 -translate-x-1/2"></div>
 
           <div className="relative z-10">

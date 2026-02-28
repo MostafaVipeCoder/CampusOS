@@ -29,22 +29,21 @@ export const Dashboard = ({ branchId }: { branchId?: string }) => {
       today.setHours(0, 0, 0, 0);
       const todayISO = today.toISOString();
 
-      // 1. Attendance Now
+      // 1. Attendance Now (workspace_sessions)
       const { count: presentNow, error: err1 } = await supabase
-        .from('visits')
+        .from('workspace_sessions')
         .select('*', { count: 'exact', head: true })
-        .eq('branch_id', branchId)
-        .is('check_out', null);
+        .in('status', ['active', 'checkout_requested']);
       if (err1) throw err1;
 
       // 2. Daily Revenue
-      const { data: visitsToday, error: err2 } = await supabase
-        .from('visits')
-        .select('paid_amount')
-        .eq('branch_id', branchId)
-        .gte('created_at', todayISO);
+      const { data: sessionsToday, error: err2 } = await supabase
+        .from('workspace_sessions')
+        .select('total_amount')
+        .eq('status', 'completed')
+        .gte('created_at', todayISO); // Assuming creating or completely checking out today
       if (err2) throw err2;
-      const dailyRevenue = visitsToday?.reduce((acc, v) => acc + (Number(v.paid_amount) || 0), 0) || 0;
+      const dailyRevenue = sessionsToday?.reduce((acc, v) => acc + (Number(v.total_amount) || 0), 0) || 0;
 
       // 3. New Members Today
       const { count: newMembersToday, error: err3 } = await supabase
@@ -128,10 +127,10 @@ export const Dashboard = ({ branchId }: { branchId?: string }) => {
         <button
           onClick={fetchDashboardStats}
           disabled={loading}
-          className="p-2 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
+          className="p-3 bg-white/50 border border-white/60 shadow-sm rounded-2xl hover:bg-white transition-all hover:shadow hover:scale-105 active:scale-95 disabled:opacity-50 group"
           title="تحديث البيانات"
         >
-          <RefreshCcw size={20} className={loading ? 'animate-spin text-indigo-600' : 'text-slate-400'} />
+          <RefreshCcw size={22} className={loading ? 'animate-spin text-indigo-600' : 'text-slate-500 group-hover:text-indigo-600 group-hover:rotate-180 transition-all duration-500'} />
         </button>
       </div>
 
@@ -146,58 +145,66 @@ export const Dashboard = ({ branchId }: { branchId?: string }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 relative overflow-hidden group">
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
           <CardHeader>
             <CardTitle>تحليلات الأداء</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-72 bg-slate-50/50 rounded-[1.5rem] flex items-center justify-center border-2 border-dashed border-slate-100">
-              <TrendingUp size={64} className="text-indigo-200" />
+            <div className="h-72 bg-white/40 rounded-[1.5rem] flex items-center justify-center border-2 border-dashed border-slate-200/50 relative overflow-hidden group/chart cursor-crosshair">
+              <div className="absolute inset-0 bg-indigo-500/5 translate-y-full group-hover/chart:translate-y-0 transition-transform duration-700 ease-out" />
+              <TrendingUp size={80} className="text-indigo-200 group-hover/chart:text-indigo-400 group-hover/chart:scale-110 transition-all duration-500" />
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="relative overflow-hidden group">
+          <div className="absolute -right-20 -top-20 w-40 h-40 bg-indigo-500/5 rounded-full blur-3xl group-hover:bg-indigo-500/10 transition-colors duration-500" />
           <CardHeader>
             <CardTitle>تحليلات الاشتراكات</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Total Subscriptions */}
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-              <p className="text-slate-500 font-bold text-xs mb-1">إجمالي الاشتراكات</p>
+            <div className="bg-white/50 backdrop-blur-sm rounded-2xl p-5 border border-white shadow-[0_4px_20px_-10px_rgba(0,0,0,0.05)] hover:-translate-y-1 transition-transform">
+              <p className="text-slate-500 font-bold text-xs mb-2">إجمالي الاشتراكات</p>
               <div className="flex items-end justify-between">
-                <span className="text-3xl font-black text-slate-800">{stats.totalSubscriptions}</span>
-                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">+12%</span>
+                <span className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-500">{stats.totalSubscriptions}</span>
+                <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-100 shadow-sm transition-transform hover:scale-105 cursor-default">+12%</span>
               </div>
             </div>
 
             {/* Active vs Expired */}
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm font-bold">
-                <span className="text-slate-600">نشط / منتهي</span>
-                <span className="text-slate-800">{stats.activeSubscriptions} / {stats.expiredSubscriptions}</span>
+            <div className="space-y-3 p-2">
+              <div className="flex justify-between text-[13px] font-black">
+                <span className="text-slate-500">نشط / منتهي</span>
+                <span className="text-slate-800">{stats.activeSubscriptions} <span className="text-slate-300 mx-1">/</span> {stats.expiredSubscriptions}</span>
               </div>
-              <div className="h-3 bg-slate-100 rounded-full overflow-hidden flex">
+              <div className="h-4 bg-slate-100/80 rounded-full overflow-hidden flex shadow-inner border border-slate-200/50">
                 <div
-                  className="bg-indigo-500 h-full rounded-r-full"
+                  className="bg-gradient-to-r from-indigo-500 to-violet-500 h-full rounded-full relative overflow-hidden group-hover:brightness-110 transition-all duration-1000"
                   style={{ width: `${(stats.activeSubscriptions / stats.totalSubscriptions) * 100}%` }}
-                ></div>
-                <div className="bg-rose-200 h-full flex-1"></div>
+                >
+                  <div className="absolute inset-0 bg-white/20 w-1/2 skew-x-12 -translate-x-full animate-[shimmer_2s_infinite]" />
+                </div>
+                <div className="bg-rose-100 h-full flex-1 transition-colors duration-500 group-hover:bg-rose-200"></div>
               </div>
             </div>
 
             {/* Retention Rate */}
-            <div className="flex items-center gap-4 p-4 border border-slate-100 rounded-2xl">
-              <div className="relative w-16 h-16 flex items-center justify-center">
-                <svg className="w-full h-full transform -rotate-90">
-                  <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="transparent" className="text-slate-100" />
-                  <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="transparent" strokeDasharray={175.92} strokeDashoffset={175.92 - (175.92 * stats.retentionRate) / 100} className="text-indigo-600" />
+            <div className="flex items-center gap-5 p-5 bg-white/40 border border-white shadow-sm rounded-2xl hover:bg-white/60 transition-colors cursor-pointer group/retention">
+              <div className="relative w-20 h-20 flex items-center justify-center flex-shrink-0">
+                <svg className="w-full h-full transform -rotate-90 drop-shadow-sm">
+                  <circle cx="40" cy="40" r="34" stroke="currentColor" strokeWidth="6" fill="transparent" className="text-slate-100" />
+                  <circle cx="40" cy="40" r="34" stroke="currentColor" strokeWidth="6" fill="transparent" strokeDasharray={213.6} strokeDashoffset={213.6 - (213.6 * stats.retentionRate) / 100} className="text-indigo-500 transition-all duration-1000 ease-out" strokeLinecap="round" />
                 </svg>
-                <span className="absolute text-sm font-black text-indigo-900">{stats.retentionRate}%</span>
+                <span className="absolute text-lg font-black text-indigo-900 group-hover/retention:scale-110 transition-transform">{stats.retentionRate}%</span>
               </div>
               <div>
-                <p className="font-black text-slate-800 text-sm">معدل الحفاظ على العملاء</p>
-                <p className="text-xs text-slate-400 font-bold mt-1">أعلى من المعدل الطبيعي بـ 5%</p>
+                <p className="font-black text-slate-800 text-[15px]">معدل الحفاظ على العملاء</p>
+                <div className="flex items-center gap-1 mt-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <p className="text-xs text-slate-500 font-bold">أعلى من المعدل الطبيعي بـ 5%</p>
+                </div>
               </div>
             </div>
 

@@ -69,38 +69,51 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
     setLoading(true);
     const dateStr = currentDate.toISOString().split('T')[0];
 
-    // 1. Fetch Visits Income
-    const { data: visits } = await (supabase as any)
-      .from('visits')
-      .select('total_fee, service_id, services(service_type)')
-      .eq('branch_id', branchId)
-      .gte('check_in', `${dateStr}T00:00:00`)
-      .lte('check_in', `${dateStr}T23:59:59`);
+    try {
+      // 1. Fetch Workspace Sessions Income (Completed ones usually have total_amount)
+      const { data: sessions } = await supabase
+        .from('workspace_sessions')
+        .select('total_amount, catering_amount')
+        .eq('status', 'completed')
+        .gte('end_time', `${dateStr}T00:00:00`)
+        .lte('end_time', `${dateStr}T23:59:59`);
 
-    // 2. Fetch Subscriptions Income
-    const { data: subs } = await (supabase as any)
-      .from('subscriptions')
-      .select('price')
-      .eq('branch_id', branchId)
-      .gte('created_at', `${dateStr}T00:00:00`)
-      .lte('created_at', `${dateStr}T23:59:59`);
+      // 2. Fetch Subscriptions Income
+      const { data: subs } = await supabase
+        .from('subscriptions')
+        .select('price')
+        .gte('created_at', `${dateStr}T00:00:00`)
+        .lte('created_at', `${dateStr}T23:59:59`);
 
-    let workspace = 0, rooms = 0, catering = 0;
-    visits?.forEach(v => {
-      const type = (v.services as any)?.service_type;
-      if (type === 'Room') rooms += v.total_fee;
-      else workspace += v.total_fee;
-    });
+      // 3. Fetch Daily Expenses
+      const { data: expenses } = await supabase
+        .from('expenses')
+        .select('amount')
+        .eq('date', dateStr);
 
-    const subIncome = subs?.reduce((s, b) => s + (b.price || 0), 0) || 0;
-    const totalIncome = workspace + rooms + catering + subIncome;
+      let workspace = 0, catering = 0;
+      sessions?.forEach(s => {
+        const cat = s.catering_amount || 0;
+        const total = s.total_amount || 0;
+        catering += cat;
+        // Workspace is total minus catering
+        workspace += (total - cat);
+      });
 
-    setDailyData({
-      income: totalIncome,
-      expense: 0, // Mock for now until expense table exists
-      details: { catering, rooms, workspace: workspace + subIncome }
-    });
-    setLoading(false);
+      const subIncome = subs?.reduce((s, b) => s + (b.price || 0), 0) || 0;
+      const totalIncome = workspace + catering + subIncome;
+      const totalExpense = expenses?.reduce((s, e) => s + (e.amount || 0), 0) || 0;
+
+      setDailyData({
+        income: totalIncome,
+        expense: totalExpense,
+        details: { catering, rooms: 0, workspace: workspace + subIncome }
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fetchMonthlyFinance = async () => {
@@ -108,39 +121,51 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
     const firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).toISOString().split('T')[0];
     const lastDay = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).toISOString().split('T')[0];
 
-    // 1. Fetch Monthly Visits
-    const { data: visits } = await (supabase as any)
-      .from('visits')
-      .select('total_fee, services(service_type)')
-      .eq('branch_id', branchId)
-      .gte('check_in', `${firstDay}T00:00:00`)
-      .lte('check_in', `${lastDay}T23:59:59`);
+    try {
+      // 1. Fetch Monthly Workspace Sessions
+      const { data: sessions } = await supabase
+        .from('workspace_sessions')
+        .select('total_amount, catering_amount')
+        .eq('status', 'completed')
+        .gte('end_time', `${firstDay}T00:00:00`)
+        .lte('end_time', `${lastDay}T23:59:59`);
 
-    // 2. Fetch Monthly Subscriptions
-    const { data: subs } = await (supabase as any)
-      .from('subscriptions')
-      .select('price')
-      .eq('branch_id', branchId)
-      .gte('created_at', `${firstDay}T00:00:00`)
-      .lte('created_at', `${lastDay}T23:59:59`);
+      // 2. Fetch Monthly Subscriptions
+      const { data: subs } = await supabase
+        .from('subscriptions')
+        .select('price')
+        .gte('created_at', `${firstDay}T00:00:00`)
+        .lte('created_at', `${lastDay}T23:59:59`);
 
-    let workspace = 0, rooms = 0, catering = 0;
-    visits?.forEach((v: any) => {
-      const type = (v.services as any)?.service_type;
-      if (type === 'Room') rooms += v.total_fee;
-      else if (type === 'Catering') catering += v.total_fee;
-      else workspace += v.total_fee;
-    });
+      // 3. Fetch Monthly Expenses
+      const { data: expenses } = await supabase
+        .from('expenses')
+        .select('amount')
+        .gte('date', firstDay)
+        .lte('date', lastDay);
 
-    const subIncome = subs?.reduce((s: number, b: any) => s + (b.price || 0), 0) || 0;
-    const totalIncome = workspace + rooms + catering + subIncome;
+      let workspace = 0, catering = 0;
+      sessions?.forEach(s => {
+        const cat = s.catering_amount || 0;
+        const total = s.total_amount || 0;
+        catering += cat;
+        workspace += (total - cat);
+      });
 
-    setDailyData({
-      income: totalIncome,
-      expense: 0, // Mock until expense table exists
-      details: { catering, rooms, workspace: workspace + subIncome }
-    });
-    setLoading(false);
+      const subIncome = subs?.reduce((s: number, b: any) => s + (b.price || 0), 0) || 0;
+      const totalIncome = workspace + catering + subIncome;
+      const totalExpense = expenses?.reduce((s: number, e: any) => s + (e.amount || 0), 0) || 0;
+
+      setDailyData({
+        income: totalIncome,
+        expense: totalExpense,
+        details: { catering, rooms: 0, workspace: workspace + subIncome }
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const totalCountedCash = denominations.reduce((sum, den) => {
@@ -148,7 +173,9 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
     return sum + (count * den);
   }, 0);
 
-  const expectedCash = 15420;
+  // The expected cash in drawer = total daily income - total daily expenses + (petty cash added - petty cash withdrawn)
+  // Plus any starting cash if applicable (assuming petty cash added acts as starting cash for now)
+  const expectedCash = dailyData.income - dailyData.expense + (pettyCashStats.added - pettyCashStats.withdrawn);
   const cashDiff = totalCountedCash - expectedCash;
 
   const getDiffColor = () => {

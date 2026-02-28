@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Search, Filter, Receipt, Trash2, Calendar, Tag, CreditCard, X, Save } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input } from '../components/ui';
+import { supabase } from '../lib/supabase';
 
 const EXPENSE_CATEGORIES = [
   { id: 'Cleaning', label: 'تنظيف وتطهير' },
@@ -19,12 +20,8 @@ const EXPENSE_CATEGORIES = [
 ];
 
 export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
-  const [expenses, setExpenses] = useState([
-    { id: 1, category: 'إيجار', amount: 15000, date: '2024-10-01', note: 'إيجار فرع Cloud أكتوبر', type: 'Fixed' },
-    { id: 2, category: 'رواتب وأجور', amount: 12000, date: '2024-10-05', note: 'رواتب موظفي الاستقبال', type: 'Staff' },
-    { id: 3, category: 'مطبخ وبوفيه', amount: 850, date: '2024-10-08', note: 'قهوة وحليب ووجبات خفيفة', type: 'Catering' },
-    { id: 4, category: 'مرافق (كهرباء/مياه/نت)', amount: 2400, date: '2024-10-10', note: 'كهرباء وإنترنت Cloud', type: 'Bills' },
-  ]);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [newExpense, setNewExpense] = useState({
@@ -34,33 +31,127 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
     date: new Date().toISOString().split('T')[0],
     items: [] as { name: string, price: string, qty: string, unit: string }[]
   });
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleAddExpense = () => {
+  useEffect(() => {
+    fetchExpenses();
+  }, [branchId]);
+
+  const fetchExpenses = async () => {
+    try {
+      setLoading(true);
+      let query = supabase.from('expenses').select('*').order('date', { ascending: false });
+      if (branchId) query = query.eq('branch_id', branchId);
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      setExpenses(data || []);
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddExpense = async () => {
     const finalAmount = newExpense.items.length > 0
       ? newExpense.items.reduce((sum, item) => sum + (parseFloat(item.price || '0') * parseFloat(item.qty || '0')), 0)
       : parseFloat(newExpense.amount || '0');
 
     if (!finalAmount || !newExpense.category) return;
+    setSubmitting(true);
+    
+    try {
+        if (newExpense.category === 'مطبخ وبوفيه' && newExpense.items.length > 0) {
+            for (const item of newExpense.items) {
+                if (!item.name || parseFloat(item.qty) <= 0) continue;
+                
+                // Check if it exists in inventory
+                const { data: existing } = await supabase
+                    .from('inventory')
+                    .select('id, stock')
+                    .eq('name', item.name)
+                    .eq('category', 'مطبخ وبوفيه')
+                    .maybeSingle();
+                    
+                if (existing) {
+                    await supabase
+                        .from('inventory')
+                        .update({ stock: (existing.stock || 0) + parseFloat(item.qty), last_restock: newExpense.date })
+                        .eq('id', existing.id);
+                        
+                    await supabase.from('inventory_logs').insert([{
+                        branch_id: branchId || null,
+                        inventory_id: existing.id,
+                        type: 'Supply',
+                        quantity: parseFloat(item.qty),
+                        notes: newExpense.note
+                    }]);
+                } else {
+                    const { data: newInv } = await supabase
+                        .from('inventory').insert([{
+                            name: item.name,
+                            category: 'مطبخ وبوفيه',
+                            stock: parseFloat(item.qty),
+                            price: 0, // Default selling price
+                            min_stock: 5,
+                            unit: item.unit,
+                            last_restock: newExpense.date,
+                            branch_id: branchId || null
+                        }]).select().single();
+                        
+                    if (newInv) {
+                        await supabase.from('inventory_logs').insert([{
+                            branch_id: branchId || null,
+                            inventory_id: newInv.id,
+                            type: 'Supply',
+                            quantity: parseFloat(item.qty),
+                            notes: newExpense.note
+                        }]);
+                    }
+                }
+            }
+        }
 
-    const expense = {
-      id: Date.now(),
-      category: newExpense.category,
-      amount: finalAmount,
-      date: newExpense.date,
-      note: newExpense.note + (newExpense.items.length > 0 ? ` (${newExpense.items.length} أصناف)` : ''),
-      type: 'General',
-      items: newExpense.items // Save items in record
-    };
+        const expenseRecord = {
+          category: newExpense.category,
+          amount: finalAmount,
+          date: newExpense.date,
+          note: newExpense.note + (newExpense.items.length > 0 ? ` (${newExpense.items.length} أصناف)` : ''),
+          type: 'General',
+          items: newExpense.items.length > 0 ? newExpense.items : null,
+          branch_id: branchId || null
+        };
 
-    setExpenses([expense, ...expenses]);
-    setShowAddModal(false);
-    setNewExpense({
-      amount: '',
-      category: EXPENSE_CATEGORIES[0].label,
-      note: '',
-      date: new Date().toISOString().split('T')[0],
-      items: []
-    });
+        const { error } = await supabase.from('expenses').insert([expenseRecord]);
+        if (error) throw error;
+
+        setShowAddModal(false);
+        setNewExpense({
+          amount: '',
+          category: EXPENSE_CATEGORIES[0].label,
+          note: '',
+          date: new Date().toISOString().split('T')[0],
+          items: []
+        });
+        
+        fetchExpenses();
+    } catch (err: any) {
+        alert('حدث خطأ أثناء حفظ المصروف: ' + err.message);
+    } finally {
+        setSubmitting(false);
+    }
+  };
+  
+  const handleDeleteExpense = async (id: string) => {
+      if (!window.confirm('هل أنت متأكد من حذف هذا المصروف؟')) return;
+      try {
+          const { error } = await supabase.from('expenses').delete().eq('id', id);
+          if (error) throw error;
+          fetchExpenses();
+      } catch (err: any) {
+          alert("خطأ أثناء الحذف: " + err.message);
+      }
   };
 
   const addItemRow = () => {
@@ -166,12 +257,15 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
                     <div className="flex items-center gap-2"><Calendar size={12} /> {item.date}</div>
                   </td>
                   <td className="px-6 py-6 text-slate-500 text-xs max-w-xs truncate">{item.note}</td>
-                  <td className="px-6 py-6 text-center text-rose-600 font-black">{item.amount.toLocaleString()} <span className="text-[10px]">EGP</span></td>
+                  <td className="px-6 py-6 text-center text-rose-600 font-black">{item.amount?.toLocaleString() || 0} <span className="text-[10px]">EGP</span></td>
                   <td className="px-8 py-6 text-left">
-                    <button className="p-2 text-slate-300 hover:text-rose-600 transition-all opacity-0 group-hover:opacity-100"><Trash2 size={18} /></button>
+                    <button onClick={() => handleDeleteExpense(item.id)} className="p-2 text-slate-300 hover:text-rose-600 transition-all opacity-0 group-hover:opacity-100"><Trash2 size={18} /></button>
                   </td>
                 </tr>
               ))}
+              {expenses.length === 0 && !loading && (
+                  <tr><td colSpan={5} className="py-20 text-center text-slate-400 font-bold">لا توجد مصروفات مسجلة</td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -320,9 +414,10 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
 
               <Button
                 onClick={handleAddExpense}
-                className="w-full h-14 rounded-2xl bg-indigo-600 text-white font-black text-lg shadow-lg shadow-indigo-100 gap-2"
+                disabled={submitting}
+                className="w-full h-14 rounded-2xl bg-indigo-600 text-white font-black text-lg shadow-lg shadow-indigo-100 gap-2 disabled:opacity-50"
               >
-                <Save size={20} /> تأكيد الإضافة
+                <Save size={20} /> {submitting ? 'جاري المعالجة...' : 'تأكيد الإضافة'}
               </Button>
             </CardContent>
           </Card>

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Package, Search, Filter, TrendingUp, AlertTriangle, ArrowDown, ArrowUp, RefreshCcw, Coffee, Printer, Trash2 } from 'lucide-react';
-import { Button, Card, CardHeader, CardTitle, CardContent, Badge } from '../components/ui';
+import { Package, Search, Filter, TrendingUp, AlertTriangle, ArrowDown, ArrowUp, RefreshCcw, Coffee, Printer, Trash2, Plus, X, Edit, Save } from 'lucide-react';
+import { Button, Card, CardHeader, CardTitle, CardContent, Badge, Input } from '../components/ui';
 import { supabase } from '../lib/supabase';
 
 export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
@@ -9,21 +9,33 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
     const [stockItems, setStockItems] = useState<any[]>([]);
     const [logs, setLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [newItem, setNewItem] = useState({
+        name: '',
+        category: 'مطبخ وبوفيه',
+        stock: 0,
+        min_stock: 0,
+        unit: 'وحدة',
+        price: 0
+    });
+    const [adding, setAdding] = useState(false);
+    
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editingItem, setEditingItem] = useState<any>(null);
+    const [updating, setUpdating] = useState(false);
 
     useEffect(() => {
-        if (branchId) {
-            fetchInventory();
-            fetchLogs();
-        }
+        fetchInventory();
+        fetchLogs();
     }, [branchId]);
 
     const fetchInventory = async () => {
         try {
             setLoading(true);
-            const { data, error } = await supabase
-                .from('inventory')
-                .select('*')
-                .eq('branch_id', branchId);
+            let query = supabase.from('inventory').select('*');
+            if (branchId) query = query.eq('branch_id', branchId);
+            
+            const { data, error } = await query;
             if (error) throw error;
             setStockItems(data || []);
         } catch (error) {
@@ -35,11 +47,13 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
 
     const fetchLogs = async () => {
         try {
-            const { data, error } = await (supabase as any)
-                .from('inventory_logs')
+            let query = supabase.from('inventory_logs')
                 .select('*, inventory(name)')
                 .order('created_at', { ascending: false })
                 .limit(10);
+            if (branchId) query = query.eq('branch_id', branchId);
+            
+            const { data, error } = await query;
             if (error) throw error;
             setLogs(data || []);
         } catch (error) {
@@ -55,6 +69,58 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
     });
 
     const lowStockCount = stockItems.filter(item => item.stock <= (item.min_stock || 0)).length;
+
+    const handleAddItem = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setAdding(true);
+        try {
+            const { error } = await supabase.from('inventory').insert([{
+                ...newItem,
+                branch_id: branchId || null
+            }]);
+            if (error) throw error;
+            setIsAddModalOpen(false);
+            setNewItem({ name: '', category: 'مطبخ وبوفيه', stock: 0, min_stock: 0, unit: 'وحدة', price: 0 });
+            fetchInventory();
+        } catch (error: any) {
+            alert('حدث خطأ أثناء إضافة الصنف: ' + error.message);
+        } finally {
+            setAdding(false);
+        }
+    };
+
+    const handleDeleteItem = async (id: string, name: string) => {
+        if (!window.confirm(`هل أنت متأكد من حذف ${name}؟`)) return;
+        try {
+            const { error } = await supabase.from('inventory').delete().eq('id', id);
+            if (error) throw error;
+            fetchInventory();
+        } catch (error: any) {
+            alert('حدث خطأ أثناء الحذف: ' + error.message);
+        }
+    };
+
+    const handleEditClick = (item: any) => {
+        setEditingItem({ ...item });
+        setIsEditModalOpen(true);
+    };
+
+    const handleUpdateItem = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setUpdating(true);
+        try {
+            const { id, created_at, ...updateData } = editingItem;
+            const { error } = await supabase.from('inventory').update(updateData).eq('id', id);
+            if (error) throw error;
+            setIsEditModalOpen(false);
+            setEditingItem(null);
+            fetchInventory();
+        } catch (error: any) {
+            alert('حدث خطأ أثناء التحديث: ' + error.message);
+        } finally {
+            setUpdating(false);
+        }
+    };
 
     return (
         <div className="space-y-8 animate-in fade-in duration-700 font-['Cairo'] text-right">
@@ -115,14 +181,121 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
                 </div>
 
                 <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input
                         type="text"
                         placeholder="البحث في المخزن..."
-                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pr-14 pl-6 py-3 text-sm font-bold focus:border-indigo-500 outline-none transition-all"
+                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pr-10 pl-6 py-3 text-sm font-bold focus:border-indigo-500 outline-none transition-all"
                     />
                 </div>
+                
+                <button
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20"
+                >
+                    <Plus size={20} /> إضافة صنف
+                </button>
             </div>
+
+            {isAddModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <Card className="w-full max-w-md bg-white rounded-[2.5rem] p-8 animate-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-black text-slate-900">إضافة صنف جديد</h2>
+                            <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleAddItem} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-600 mb-2">اسم الصنف</label>
+                                <input required type="text" value={newItem.name} onChange={e => setNewItem({ ...newItem, name: e.target.value })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-600 mb-2">التصنيف</label>
+                                <select value={newItem.category} onChange={e => setNewItem({ ...newItem, category: e.target.value })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3">
+                                    <option value="مطبخ وبوفيه">مطبخ وبوفيه</option>
+                                    <option value="أدوات مكتبية">أدوات مكتبية</option>
+                                    <option value="أخرى">أخرى</option>
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">الرصيد الافتتاحي</label>
+                                    <input required type="number" min="0" value={newItem.stock} onChange={e => setNewItem({ ...newItem, stock: Number(e.target.value) })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">الحد الأدنى</label>
+                                    <input required type="number" min="0" value={newItem.min_stock} onChange={e => setNewItem({ ...newItem, min_stock: Number(e.target.value) })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">الوحدة</label>
+                                    <input required type="text" value={newItem.unit} onChange={e => setNewItem({ ...newItem, unit: e.target.value })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">السعر (لكافتريا)</label>
+                                    <input required type="number" min="0" value={newItem.price} onChange={e => setNewItem({ ...newItem, price: Number(e.target.value) })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3" />
+                                </div>
+                            </div>
+                            <button type="submit" disabled={adding} className="w-full bg-indigo-600 text-white rounded-xl py-4 font-bold disabled:opacity-50 mt-4 shadow-lg shadow-indigo-500/20">
+                                {adding ? 'جاري الإضافة...' : 'إضافة إلى المخزن'}
+                            </button>
+                        </form>
+                    </Card>
+                </div>
+            )}
+
+            {isEditModalOpen && editingItem && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <Card className="w-full max-w-md bg-white rounded-[2.5rem] p-8 animate-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-black text-slate-900">تعديل صنف</h2>
+                            <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleUpdateItem} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-600 mb-2">اسم الصنف</label>
+                                <input required type="text" value={editingItem.name} onChange={e => setEditingItem({ ...editingItem, name: e.target.value })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-600 mb-2">التصنيف</label>
+                                <select value={editingItem.category} onChange={e => setEditingItem({ ...editingItem, category: e.target.value })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3">
+                                    <option value="مطبخ وبوفيه">مطبخ وبوفيه</option>
+                                    <option value="أدوات مكتبية">أدوات مكتبية</option>
+                                    <option value="أخرى">أخرى</option>
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">الرصيد الافتتاحي</label>
+                                    <input required type="number" min="0" value={editingItem.stock} onChange={e => setEditingItem({ ...editingItem, stock: Number(e.target.value) })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">الحد الأدنى</label>
+                                    <input required type="number" min="0" value={editingItem.min_stock} onChange={e => setEditingItem({ ...editingItem, min_stock: Number(e.target.value) })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">الوحدة</label>
+                                    <input required type="text" value={editingItem.unit} onChange={e => setEditingItem({ ...editingItem, unit: e.target.value })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-600 mb-2">السعر (لكافتريا)</label>
+                                    <input required type="number" min="0" value={editingItem.price || 0} onChange={e => setEditingItem({ ...editingItem, price: Number(e.target.value) })} className="w-full border-2 border-slate-100 rounded-xl px-4 py-3" />
+                                </div>
+                            </div>
+                            <button type="submit" disabled={updating} className="w-full bg-slate-900 text-white rounded-xl py-4 font-bold disabled:opacity-50 mt-4 flex justify-center items-center gap-2 shadow-lg shadow-slate-900/20">
+                                {updating ? 'جاري التحديث...' : <><Save size={18} /> حفظ التعديلات</>}
+                            </button>
+                        </form>
+                    </Card>
+                </div>
+            )}
 
             {/* Inventory Table */}
             <Card className="border-none shadow-sm rounded-[2.5rem] overflow-hidden bg-white">
@@ -132,6 +305,7 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
                             <th className="px-8 py-6">إسم الصنف</th>
                             <th className="px-6 py-6">التصنيف</th>
                             <th className="px-6 py-6 text-center">الرصيد الحالي</th>
+                            <th className="px-6 py-6 text-center">السعر</th>
                             <th className="px-6 py-6 text-center">الحالة</th>
                             <th className="px-6 py-6">آخر توريد</th>
                             <th className="px-8 py-6 text-left">إجراء</th>
@@ -168,6 +342,10 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
                                     </span>
                                     <span className="text-[10px] text-slate-400 mr-1">{item.unit}</span>
                                 </td>
+                                <td className="px-6 py-6 text-center">
+                                    <span className="font-bold text-emerald-600">{item.price || 0}</span>
+                                    <span className="text-[10px] text-slate-400 mr-1">EGP</span>
+                                </td>
                                 <td className="px-6 py-6">
                                     <div className="flex flex-col items-center gap-2">
                                         <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -188,10 +366,10 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
                                 </td>
                                 <td className="px-8 py-6 text-left">
                                     <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-all">
-                                        <button className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-slate-100">
-                                            <RefreshCcw size={16} />
+                                        <button onClick={() => handleEditClick(item)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-slate-100">
+                                            <Edit size={16} />
                                         </button>
-                                        <button className="p-2 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-slate-100">
+                                        <button onClick={() => handleDeleteItem(item.id, item.name)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-slate-100">
                                             <Trash2 size={16} />
                                         </button>
                                     </div>
