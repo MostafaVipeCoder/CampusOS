@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { LayoutDashboard, UserCheck, ClipboardCheck, Users2, Award, Layers, Calendar, Wallet, Receipt, Package, Users, Settings, LogOut } from 'lucide-react';
 
-export const Sidebar = () => {
+export const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -30,7 +30,16 @@ export const Sidebar = () => {
     { id: 'settings', label: 'الإعدادات', path: '/settings', icon: Settings },
   ];
   return (
-    <aside className="w-64 bg-[#0B0F19] text-slate-300 fixed h-screen right-0 top-0 z-50 flex flex-col font-['Cairo'] shadow-[4px_0_24px_rgba(0,0,0,0.1)] border-l border-white/5 transition-all duration-300">
+    <>
+      {/* Mobile Overlay */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[45] lg:hidden transition-opacity duration-300"
+          onClick={onClose}
+        />
+      )}
+      
+      <aside className={`w-64 bg-[#0B0F19] text-slate-300 fixed h-screen right-0 top-0 z-50 flex flex-col font-['Cairo'] shadow-[4px_0_24px_rgba(0,0,0,0.1)] border-l border-white/5 transition-all duration-500 transform ${isOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}`}>
       <div className="p-8 border-b border-white/5 relative overflow-hidden">
         {/* Decorative gradient orb */}
         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 rounded-full blur-[40px] -z-10 pointer-events-none" />
@@ -78,5 +87,6 @@ export const Sidebar = () => {
         </button>
       </div>
     </aside>
+    </>
   );
 };

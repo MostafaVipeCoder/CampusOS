@@ -35,20 +35,27 @@ export const Dashboard = ({ branchId }: { branchId?: string }) => {
       const todayISO = today.toISOString();
 
       // 1. Attendance Now (workspace_sessions)
-      const { count: presentNow, error: err1 } = await supabase
+      const { count: presentNow, error: err1 } = await (supabase as any)
         .from('workspace_sessions')
         .select('*', { count: 'exact', head: true })
+        .eq('branch_id', branchId)
         .in('status', ['active', 'checkout_requested']);
       if (err1) throw err1;
 
-      // 2. Daily Revenue
-      const { data: sessionsToday, error: err2 } = await supabase
-        .from('workspace_sessions')
-        .select('total_amount')
-        .eq('status', 'completed')
-        .gte('created_at', todayISO); // Assuming creating or completely checking out today
-      if (err2) throw err2;
-      const dailyRevenue = sessionsToday?.reduce((acc, v) => acc + (Number(v.total_amount) || 0), 0) || 0;
+      const dateStr = today.toISOString().split('T')[0];
+
+      // 2. Daily Revenue (Sessions + Subscriptions + Petty Adds)
+      const [sessionsRes, subsRes, pettyRes] = await Promise.all([
+        (supabase as any).from('workspace_sessions').select('total_amount').eq('branch_id', branchId).eq('status', 'completed').gte('end_time', todayISO),
+        (supabase as any).from('subscriptions').select('price').eq('branch_id', branchId).gte('created_at', todayISO),
+        (supabase as any).from('petty_cash').select('amount').eq('branch_id', branchId).eq('type', 'add').gte('created_at', todayISO)
+      ]);
+
+      const sessionRevenue = sessionsRes.data?.reduce((acc: number, v: any) => acc + (Number(v.total_amount) || 0), 0) || 0;
+      const subRevenue = subsRes.data?.reduce((acc: number, v: any) => acc + (Number(v.price) || 0), 0) || 0;
+      const pettyRevenue = pettyRes.data?.reduce((acc: number, v: any) => acc + (Number(v.amount) || 0), 0) || 0;
+      
+      const dailyRevenue = sessionRevenue + subRevenue + pettyRevenue;
 
       // 3. New Members Today
       const { count: newMembersToday, error: err3 } = await supabase
@@ -213,7 +220,8 @@ export const Dashboard = ({ branchId }: { branchId?: string }) => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 relative">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 relative">
+
         {loading && (
           <div className="absolute inset-0 bg-white/20 backdrop-blur-[1px] z-10 rounded-3xl" />
         )}

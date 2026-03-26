@@ -142,7 +142,7 @@ export const ActivitiesPage = ({ branchId }: { branchId?: string }) => {
                     <div key={month} className="space-y-4">
                         <h3 className="text-xl font-black text-indigo-600 bg-indigo-50 px-6 py-2 rounded-2xl w-fit">{month}</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {monthActivities.map(activity => (
+                            {(monthActivities as Activity[]).map(activity => (
                                 <div key={activity.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
                                     <div className={`absolute top-0 right-0 w-2 h-full ${activity.status === 'Completed' ? 'bg-emerald-500' :
                                         activity.status === 'Cancelled' ? 'bg-rose-500' : 'bg-amber-400'

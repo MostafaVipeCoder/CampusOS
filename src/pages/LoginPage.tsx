@@ -9,7 +9,17 @@ export const LoginPage = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
     const navigate = useNavigate();
+
+    React.useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                navigate('/dashboard', { replace: true });
+            }
+        });
+    }, [navigate]);
+
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();

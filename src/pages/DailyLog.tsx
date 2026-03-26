@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarDays, ShoppingBag, Clock, CheckCircle2, User, RefreshCw, X, Receipt } from 'lucide-react';
+import { CalendarDays, ShoppingBag, Clock, CheckCircle2, User, RefreshCw, X, Receipt, TrendingUp, TrendingDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui';
 
@@ -18,41 +18,61 @@ interface Session {
   customers?: { full_name: string };
 }
 
-export const DailyLog = () => {
+export const DailyLog = ({ branchId }: { branchId?: string }) => {
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [subscriptions, setSubscriptions] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchTodayLog();
 
     const channel = supabase
-      .channel('daily_log_sessions')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'workspace_sessions' },
-        () => fetchTodayLog()
-      )
+      .channel('daily_log_all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_sessions' }, () => fetchTodayLog())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, () => fetchTodayLog())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => fetchTodayLog())
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [branchId]);
 
   const fetchTodayLog = async () => {
     try {
       setLoading(true);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+      const dateStr = todayISO.split('T')[0];
 
-      const { data, error } = await supabase
+      // 1. Fetch Sessions
+      const { data: sessionsData, error: errSessions } = await supabase
         .from('workspace_sessions')
         .select(`*, customers(full_name, code)`)
-        .gte('created_at', today.toISOString())
+        .gte('created_at', todayISO)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setSessions(data as Session[]);
+      if (errSessions) throw errSessions;
+      setSessions(sessionsData as Session[]);
+
+      // 2. Fetch Subscriptions today
+      const { data: subsData } = await supabase
+        .from('subscriptions')
+        .select('price')
+        .eq('branch_id', branchId)
+        .gte('created_at', todayISO);
+      setSubscriptions(subsData || []);
+
+      // 3. Fetch Expenses today
+      const { data: expData } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('branch_id', branchId)
+        .eq('date', dateStr);
+      setExpenses(expData || []);
+
     } catch (err) {
       console.error(err);
     } finally {
@@ -62,8 +82,12 @@ export const DailyLog = () => {
 
   const completedCount = sessions.filter(s => s.status === 'completed').length;
   const activeCount = sessions.filter(s => s.status === 'active' || s.status === 'checkout_requested').length;
-  const totalIncome = sessions.reduce((acc, s) => acc + (s.total_amount || 0), 0);
-  const totalCatering = sessions.reduce((acc, s) => acc + (s.catering_amount || 0), 0);
+  
+  const sessionsIncome = sessions.reduce((acc, s) => acc + (Number(s.total_amount) || 0), 0);
+  const subsIncome = subscriptions.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+  const totalCashIn = sessionsIncome + subsIncome;
+  
+  const totalCashOut = expenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700 font-['Cairo'] text-right pb-20">
@@ -81,43 +105,47 @@ export const DailyLog = () => {
         </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="border-none shadow-sm rounded-[2.5rem] bg-white p-6 flex items-center gap-6">
-          <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center">
+      {/* Stats - Connected with Finance */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+        <Card className="border-none shadow-sm rounded-[2.5rem] bg-indigo-50 p-6 flex items-center gap-6">
+          <div className="w-16 h-16 bg-white text-indigo-600 rounded-3xl flex items-center justify-center shadow-sm">
             <User size={32} />
           </div>
           <div>
-            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">إجمالي الزوار</p>
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">زوار اليوم</p>
             <p className="text-3xl font-black text-slate-900">{sessions.length}</p>
           </div>
         </Card>
-        <Card className="border-none shadow-sm rounded-[2.5rem] bg-emerald-50 p-6 flex items-center gap-6">
-          <div className="w-16 h-16 bg-emerald-200 text-emerald-700 rounded-3xl flex items-center justify-center">
-             <CheckCircle2 size={32} />
-          </div>
-          <div>
-            <p className="text-xs font-black text-emerald-600/70 uppercase tracking-widest">مكتمل</p>
-            <p className="text-3xl font-black text-emerald-700">{completedCount}</p>
-          </div>
-        </Card>
-        <Card className="border-none shadow-sm rounded-[2.5rem] bg-indigo-50 text-indigo-900 p-6 flex items-center gap-6">
-          <div className="w-16 h-16 bg-indigo-200 text-indigo-700 rounded-3xl flex items-center justify-center">
+
+        <Card className="border-none shadow-sm rounded-[2.5rem] bg-indigo-900 text-white p-6 flex items-center gap-6 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-2xl -z-0" />
+          <div className="w-16 h-16 bg-white/10 text-indigo-200 rounded-3xl flex items-center justify-center relative z-10">
             <Clock size={32} />
           </div>
-          <div>
-            <p className="text-xs font-black text-indigo-900/50 uppercase tracking-widest text-right">نشط الآن</p>
+          <div className="relative z-10">
+            <p className="text-xs font-black opacity-60 uppercase tracking-widest text-right">نشط الآن</p>
             <p className="text-3xl font-black">{activeCount}</p>
           </div>
         </Card>
         
-        <Card className="border-none shadow-xl rounded-[2.5rem] bg-slate-900 text-white p-6 flex items-center gap-6">
-          <div className="w-16 h-16 bg-white/10 text-emerald-400 rounded-3xl flex items-center justify-center">
-            <Receipt size={32} />
+        <Card className="border-none shadow-xl rounded-[2.5rem] bg-emerald-600 text-white p-6 flex items-center gap-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
+          <div className="w-16 h-16 bg-white/20 text-white rounded-3xl flex items-center justify-center shadow-lg relative z-10">
+            <TrendingUp size={32} />
+          </div>
+          <div className="relative z-10">
+            <p className="text-xs font-black opacity-80 uppercase tracking-widest text-right">Cash In (دخل اليوم)</p>
+            <p className="text-3xl font-black">{totalCashIn.toLocaleString()} <span className="text-sm">EGP</span></p>
+          </div>
+        </Card>
+
+        <Card className="border-none shadow-xl rounded-[2.5rem] bg-white border border-rose-100 p-6 flex items-center gap-6 group hover:border-rose-300 transition-all">
+          <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center group-hover:scale-110 transition-transform">
+            <TrendingDown size={32} />
           </div>
           <div>
-            <p className="text-xs font-black opacity-60 uppercase tracking-widest text-right">مبيعات اليوم</p>
-            <p className="text-3xl font-black">{totalIncome.toLocaleString()} <span className="text-sm">EGP</span></p>
+            <p className="text-xs font-black text-rose-400 uppercase tracking-widest text-right">Cash Out (مصروفات)</p>
+            <p className="text-3xl font-black text-rose-600">{totalCashOut.toLocaleString()} <span className="text-sm">EGP</span></p>
           </div>
         </Card>
       </div>

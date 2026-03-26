@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Download, Mail, Phone, MoreVertical, Plus, X, Edit, QrCode, Send, Trash2, CheckCircle2, Loader2, ChevronUp } from 'lucide-react';
+import { Search, Filter, Download, Mail, Phone, MoreVertical, Plus, X, Edit, QrCode, Send, Trash2, CheckCircle2, Loader2, ChevronUp, AlertCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../lib/supabase';
 import { Tables } from '../database.types';
@@ -252,47 +252,52 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
       )}
 
       {/* Header Controls */}
-      <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col lg:flex-row justify-between items-center gap-6">
+      <div className="bg-white/80 backdrop-blur-md p-4 sm:p-6 rounded-[2rem] sm:rounded-[2.5rem] border border-white shadow-xl flex flex-col xl:flex-row justify-between items-center gap-4 sm:gap-6 sticky top-2 sm:top-6 z-30">
         <div className="relative flex-1 w-full lg:max-w-md">
-          <Search className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+          <Search className="absolute right-4 sm:right-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
             type="text"
             placeholder="البحث باسم العميل أو الكود..."
-            className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pr-16 pl-6 py-4 text-sm font-bold focus:border-indigo-500 outline-none transition-all"
+            className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pr-12 sm:pr-16 pl-4 sm:pl-6 py-3 sm:py-4 text-base sm:text-lg font-bold focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 outline-none transition-all"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <div className="flex flex-wrap gap-4 w-full lg:w-auto justify-end">
+        <div className="flex flex-wrap gap-2 sm:gap-4 w-full lg:w-auto justify-center lg:justify-end">
           <button
             onClick={() => setActiveModal('add')}
-            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-8 py-3 sm:py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs sm:text-sm hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 active:scale-95"
           >
             <Plus size={18} /> إضافة عميل جديد
           </button>
+
           <button 
             onClick={() => setSortConfig(prev => ({ column: 'code', ascending: !prev.ascending }))}
-            className="flex items-center gap-2 px-6 py-3 bg-indigo-50 text-indigo-600 rounded-2xl font-black text-sm hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm"
+            className="flex items-center gap-2 px-8 py-4 bg-indigo-50 text-indigo-600 rounded-2xl font-black text-sm hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm active:scale-95"
           >
             {sortConfig.ascending ? <ChevronUp size={18} /> : <ChevronUp size={18} className="rotate-180" />} 
             ترتيب {sortConfig.ascending ? 'تصاعدي' : 'تنازلي'}
           </button>
           
-          <button className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all"><Download size={18} /> تصدير Excel</button>
+          <button className="flex items-center gap-2 px-8 py-4 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all shadow-lg active:scale-95"><Download size={18} /> تصدير Excel</button>
         </div>
       </div>
 
-      {/* Database Table */}
-      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden min-h-[500px] relative">
+      {/* Database Table Container */}
+      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl overflow-hidden min-h-[500px] relative group/table transition-all">
         {loading && (
-          <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-10 flex items-center justify-center">
-            <Loader2 className="animate-spin text-indigo-600" size={48} />
+          <div className="absolute inset-0 bg-white/70 backdrop-blur-lg z-10 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="animate-spin text-indigo-600" size={64} />
+              <p className="text-indigo-900 font-black animate-pulse">جاري تحميل البيانات...</p>
+            </div>
           </div>
         )}
 
-        <table className="w-full text-right">
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-right min-w-[1000px]">
           <thead>
-            <tr className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
+            <tr className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100 sticky top-0 bg-white z-20">
               <th 
                 className="px-8 py-6 cursor-pointer hover:text-indigo-600 transition-colors group"
                 onClick={() => setSortConfig(prev => ({ 
@@ -314,7 +319,7 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
               <th className="px-8 py-6 text-left">أدوات</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-50 font-bold">
+          <tbody className="divide-y divide-slate-50 font-bold relative">
             {!loading && filteredCustomers.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-8 py-20 text-center text-slate-400 font-black">
@@ -380,7 +385,20 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
                 <td className="px-8 py-6 text-left">
                   <div className="flex justify-end gap-2 opacity-150 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => openEditModal(customer)} title="تعديل" className="p-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-colors"><Edit size={16} /></button>
-                    <button onClick={() => { setSelectedCustomer(customer); setActiveModal('qr'); }} title="QR Code" className="p-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-slate-900 hover:text-white transition-colors"><QrCode size={16} /></button>
+                    <button 
+                      onClick={() => {
+                        if (customer.qr_code) {
+                          window.open(customer.qr_code, '_blank');
+                        } else {
+                          setSelectedCustomer(customer);
+                          setActiveModal('qr');
+                        }
+                      }} 
+                      title="QR Code" 
+                      className="p-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-slate-900 hover:text-white transition-colors"
+                    >
+                      <QrCode size={16} />
+                    </button>
                     {customer.email && <button onClick={() => handleResendEmail(customer.email)} title="إعادة إرسال البريد" className="p-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-amber-50 hover:text-amber-600 transition-colors"><Send size={16} /></button>}
                   </div>
                 </td>
@@ -388,7 +406,9 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
+
 
       {/* Pagination Controls */}
       {!loading && totalPages > 1 && (
@@ -450,48 +470,98 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
 
       {/* 1. Add Customer Modal */}
       {activeModal === 'add' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-            <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
-              <h3 className="text-xl font-black flex items-center gap-2"><Plus className="text-indigo-400" /> إضافة عميل جديد</h3>
-              <button onClick={resetForm}><X className="opacity-50 hover:opacity-100 transition-opacity" /></button>
-            </div>
-            <div className="p-8 space-y-6">
-              {/* Basic Info */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xl p-0 sm:p-4 animate-in fade-in transition-all">
+          <div className="bg-white w-full max-w-2xl rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-in slide-in-from-bottom-10 duration-500">
+            <div className="bg-gradient-to-r from-slate-900 to-indigo-950 p-8 flex justify-between items-center text-white shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-500/20 rounded-2xl text-indigo-400">
+                  <Plus size={24} />
+                </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-2">الاسم بالكامل</label>
-                  <input type="text" placeholder="الاسم" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
+                  <h3 className="text-2xl font-black">إضافة عميل جديد</h3>
+                  <p className="text-indigo-300/60 text-xs font-bold uppercase tracking-widest mt-1">إنشاء سجل جديد في النظام</p>
+                </div>
+              </div>
+              <button 
+                onClick={resetForm}
+                className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar flex-1">
+              {/* Form Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-black text-slate-700 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                    الاسم بالكامل
+                  </label>
+                  <input type="text" placeholder="مثال: أحمد محمد علي" 
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all"
                     value={formData.full_name} onChange={e => setFormData({ ...formData, full_name: e.target.value })} />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-2">رقم الهاتف</label>
-                  <input type="text" placeholder="01xxxxxxxxx" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-black text-slate-700 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                    رقم الهاتف
+                  </label>
+                  <input type="text" placeholder="01xxxxxxxxx" 
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all font-mono"
                     value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-2">البريد الإلكتروني</label>
-                  <input type="email" placeholder="example@mail.com" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
+
+                <div className="space-y-2">
+                  <label className="text-sm font-black text-slate-700 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                    البريد الإلكتروني
+                  </label>
+                  <input type="email" placeholder="example@mail.com" 
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-500 focus:bg-white font-mono"
                     value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-2">تاريخ الميلاد</label>
-                  <input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
+
+                <div className="space-y-2">
+                  <label className="text-sm font-black text-slate-700 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                    تاريخ الميلاد
+                  </label>
+                  <input type="date" 
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-500 focus:bg-white"
                     value={formData.birth_date || ''} onChange={e => setFormData({ ...formData, birth_date: e.target.value })} />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-2">النوع</label>
-                  <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
-                    value={formData.gender || 'Male'} onChange={e => setFormData({ ...formData, gender: e.target.value as any })}>
-                    <option value="Male">ذكر</option>
-                    <option value="Female">أنثى</option>
-                  </select>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-black text-slate-700 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                    النوع (Gender)
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button 
+                      onClick={() => setFormData({...formData, gender: 'Male'})}
+                      className={`py-4 rounded-2xl font-black text-sm transition-all border-2 ${formData.gender === 'Male' ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-slate-100'}`}
+                    >
+                      ذكر
+                    </button>
+                    <button 
+                      onClick={() => setFormData({...formData, gender: 'Female'})}
+                      className={`py-4 rounded-2xl font-black text-sm transition-all border-2 ${formData.gender === 'Female' ? 'bg-pink-600 text-white border-pink-600 shadow-lg' : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-slate-100'}`}
+                    >
+                      أنثى
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-2">كيف عرفت عنا؟</label>
-                  <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
+
+                <div className="space-y-2">
+                  <label className="text-sm font-black text-slate-700 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                    كيف عرفت عنا؟
+                  </label>
+                  <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-500 focus:bg-white transition-all appearance-none cursor-pointer"
                     value={formData.referral_source || ''} onChange={e => setFormData({ ...formData, referral_source: e.target.value })}>
-                    <option value="">اختر...</option>
+                    <option value="">اختر مصدر المعرفة...</option>
                     <option value="Facebook">فيسبوك</option>
                     <option value="Instagram">انستجرام</option>
                     <option value="Friend">ترشيح صديق</option>
@@ -500,8 +570,14 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
                 </div>
               </div>
 
-              <div className="pt-6">
-                <button onClick={handleAddSubmit} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all">تسجيل العميل في قاعدة البيانات</button>
+              <div className="pt-6 shrink-0 border-t border-slate-100">
+                <button 
+                  onClick={handleAddSubmit} 
+                  className="w-full py-5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-[1.5rem] font-black text-lg shadow-2xl shadow-indigo-200 hover:-translate-y-1 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-3"
+                >
+                  <CheckCircle2 size={24} />
+                  إكمال التسجيل و الحفظ
+                </button>
               </div>
             </div>
           </div>
@@ -510,40 +586,56 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
 
       {/* 2. Edit Customer Modal */}
       {activeModal === 'edit' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-2xl p-6">
-            <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
-              <h3 className="text-xl font-black text-slate-800">تعديل بيانات العميل</h3>
-              <button onClick={resetForm}><X className="text-slate-400 hover:text-slate-800" /></button>
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xl p-0 sm:p-4 animate-in fade-in transition-all">
+          <div className="bg-white w-full max-w-lg rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl p-8 animate-in zoom-in-95 duration-300">
+            <div className="flex justify-between items-center mb-8 border-b border-slate-100 pb-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-600">
+                  <Edit size={24} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900">تعديل البيانات</h3>
+                  <p className="text-slate-400 text-xs font-bold mt-1 uppercase tracking-widest">{selectedCustomer?.code}</p>
+                </div>
+              </div>
+              <button 
+                onClick={resetForm}
+                className="p-3 hover:bg-slate-100 rounded-full transition-colors"
+               >
+                <X size={24} className="text-slate-400" />
+              </button>
             </div>
 
-            <div className="space-y-4">
-              <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-amber-700 text-xs font-bold">
-                ⚠️ لا يمكن تعديل الاسم أو الكود أو النوع للحفاظ على تكامل البيانات.
+            <div className="space-y-6">
+              <div className="p-4 bg-amber-50 border-2 border-amber-100/50 rounded-2xl text-amber-700 text-[13px] font-bold leading-relaxed flex items-start gap-4">
+                <div className="bg-amber-100 p-1.5 rounded-lg shrink-0 mt-0.5">
+                  <AlertCircle size={14} />
+                </div>
+                <span>لا يمكن تعديل الاسم أو الكود أو النوع للحفاظ على تكامل البيانات التاريخية للمستخدم.</span>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-2">رقم الهاتف</label>
-                <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
+              <div className="space-y-2">
+                <label className="text-sm font-black text-slate-700">رقم الهاتف</label>
+                <input type="text" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-mono"
                   value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-2">البريد الإلكتروني</label>
-                <input type="email" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
+              <div className="space-y-2">
+                <label className="text-sm font-black text-slate-700">البريد الإلكتروني</label>
+                <input type="email" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all font-mono"
                   value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} />
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-2">الحالة</label>
-                <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
+              <div className="space-y-2">
+                <label className="text-sm font-black text-slate-700">تنشيط الحساب</label>
+                <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-500 transition-all appearance-none cursor-pointer"
                   value={String(formData.is_active)} onChange={e => setFormData({ ...formData, is_active: e.target.value === 'true' })} >
-                  <option value="true">نشط</option>
-                  <option value="false">غير نشط</option>
+                  <option value="true">نشط (Active)</option>
+                  <option value="false">غير نشط (Inactive)</option>
                 </select>
               </div>
 
-              <div className="pt-4 flex gap-3">
-                <button onClick={handleEditSubmit} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-black hover:bg-slate-800">حفظ التغييرات</button>
-                <button onClick={resetForm} className="px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200">إلغاء</button>
+              <div className="pt-6 flex gap-4">
+                <button onClick={handleEditSubmit} className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-black text-lg hover:bg-slate-800 hover:-translate-y-1 active:scale-95 transition-all shadow-xl">تحديث السجل</button>
+                <button onClick={resetForm} className="px-8 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-lg hover:bg-slate-200 transition-all">إلغاء</button>
               </div>
             </div>
           </div>
@@ -552,28 +644,60 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
 
       {/* 3. QR Code Modal */}
       {activeModal === 'qr' && selectedCustomer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in">
-          <div className="bg-white p-8 rounded-[3rem] shadow-2xl text-center relative max-w-sm w-full">
-            <button onClick={resetForm} className="absolute top-6 right-6 p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={20} /></button>
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/80 backdrop-blur-2xl p-0 sm:p-4 animate-in fade-in transition-all">
+          <div className="bg-white w-full max-w-sm rounded-t-[2.5rem] sm:rounded-[3rem] shadow-2xl p-10 text-center relative animate-in slide-in-from-bottom-20 duration-500 overflow-hidden">
+            {/* Background pattern */}
+            <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-indigo-50 to-transparent -z-10" />
+            
+            <button 
+              onClick={resetForm} 
+              className="absolute top-8 right-8 p-3 bg-slate-100 text-slate-400 rounded-full hover:bg-slate-200 hover:text-slate-600 transition-all"
+            >
+              <X size={20} />
+            </button>
 
-            <div className="mb-6">
-              <h3 className="text-2xl font-black text-slate-800 mb-2">{selectedCustomer.full_name}</h3>
-              <p className="text-indigo-600 font-mono font-bold tracking-widest text-lg">{selectedCustomer.code}</p>
+            <div className="mb-10">
+              <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 text-white shadow-xl shadow-indigo-100 font-black text-3xl">
+                C
+              </div>
+              <h3 className="text-3xl font-black text-slate-900 mb-2">{selectedCustomer.full_name}</h3>
+              <p className="text-indigo-600 font-mono font-black tracking-[0.2em] text-xl bg-indigo-50 inline-block px-4 py-1 rounded-lg">{selectedCustomer.code}</p>
             </div>
 
-            <div className="bg-white p-4 rounded-3xl shadow-inner border-4 border-indigo-50 inline-block mb-6">
-              <QRCodeSVG value={selectedCustomer.code} size={200} level="H" />
+            <div className="bg-white p-6 rounded-[2.5rem] shadow-[0_20px_60px_-15px_rgba(79,70,229,0.2)] border-2 border-indigo-50 inline-block mb-10 group/qr hover:scale-105 transition-transform duration-500">
+              <QRCodeSVG value={selectedCustomer.code} size={240} level="H" className="drop-shadow-sm" />
             </div>
 
-            <p className="text-slate-400 text-xs font-bold mb-6">يمكن استخدام هذا الكود لتسجيل الدخول في البوابة</p>
+            <p className="text-slate-400 text-sm font-bold mb-10 leading-relaxed px-4">استخدم هذا الرمز للمسح الضوئي السريع وبدء الجلسة تلقائياً في بوابة الدخول.</p>
 
-            <div className="flex gap-3 justify-center">
-              <button className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-200">تحميل الصورة</button>
-              <button className="px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-sm hover:bg-slate-200">طباعة</button>
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-2 gap-4">
+                <button className="py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm hover:bg-indigo-700 shadow-xl shadow-indigo-200 transition-all active:scale-95">تحميل الكود</button>
+                <button className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-sm hover:bg-slate-200 transition-all active:scale-95">طباعة</button>
+              </div>
+              {selectedCustomer.qr_code && (
+                <button 
+                  onClick={() => window.open(selectedCustomer.qr_code, '_blank')}
+                  className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-3"
+                >
+                  <Download size={18} className="text-indigo-400" />
+                  فتح الاستمارة الرقمية
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
+
+      {/* Mobile Feedback */}
+      <div className="fixed bottom-10 right-10 flex flex-col gap-4 z-40 lg:hidden pointer-events-none">
+        <div className="bg-indigo-600 text-white px-6 py-4 rounded-3xl shadow-2xl shadow-indigo-200 animate-pulse border-2 border-white">
+          <p className="text-[12px] font-black uppercase tracking-widest flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+            Mobile Version
+          </p>
+        </div>
+      </div>
 
     </div>
   );
