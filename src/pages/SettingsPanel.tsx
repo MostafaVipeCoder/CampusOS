@@ -50,6 +50,11 @@ export const SettingsPanel = ({ branchId }: { branchId?: string }) => {
   const [emailBody, setEmailBody] = useState('');
   const [senderEmail, setSenderEmail] = useState('');
   const [showPreview, setShowPreview] = useState(false);
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState('');
+  const [smtpUser, setSmtpUser] = useState('');
+  const [smtpPass, setSmtpPass] = useState('');
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -165,10 +170,21 @@ export const SettingsPanel = ({ branchId }: { branchId?: string }) => {
   // --- SETTINGS (EMAIL) ---
   const fetchSettings = async () => {
     setLoading(true);
-    const { data } = await sb.from('settings').select('*').in('key', ['welcome_email_template', 'sender_email']);
+    const { data } = await sb.from('settings').select('*').in('key', [
+      'welcome_email_template', 
+      'sender_email',
+      'smtp_host',
+      'smtp_port',
+      'smtp_user',
+      'smtp_password'
+    ]);
     if (data) {
       setEmailBody(data.find((s: any) => s.key === 'welcome_email_template')?.value || '');
       setSenderEmail(data.find((s: any) => s.key === 'sender_email')?.value || '');
+      setSmtpHost(data.find((s: any) => s.key === 'smtp_host')?.value || 'smtp.gmail.com');
+      setSmtpPort(data.find((s: any) => s.key === 'smtp_port')?.value || '465');
+      setSmtpUser(data.find((s: any) => s.key === 'smtp_user')?.value || '');
+      setSmtpPass(data.find((s: any) => s.key === 'smtp_password')?.value || '');
     }
     setLoading(false);
   };
@@ -177,11 +193,50 @@ export const SettingsPanel = ({ branchId }: { branchId?: string }) => {
     setSaving(true);
     const updates = [
       { key: 'welcome_email_template', value: emailBody, updated_at: new Date().toISOString() },
-      { key: 'sender_email', value: senderEmail, updated_at: new Date().toISOString() }
+      { key: 'sender_email', value: senderEmail, updated_at: new Date().toISOString() },
+      { key: 'smtp_host', value: smtpHost, updated_at: new Date().toISOString() },
+      { key: 'smtp_port', value: smtpPort, updated_at: new Date().toISOString() },
+      { key: 'smtp_user', value: smtpUser, updated_at: new Date().toISOString() },
+      { key: 'smtp_password', value: smtpPass, updated_at: new Date().toISOString() }
     ];
     await sb.from('settings').upsert(updates, { onConflict: 'key' });
-    showNotification('تم حفظ الإعدادات');
+    showNotification('تم حفظ إعدادات البريد والسيرفر');
     setSaving(false);
+  };
+
+  const handleSendTestEmail = async () => {
+    const targetEmail = prompt('أدخل البريد الإلكتروني لإرسال التجربة إليه:', senderEmail || smtpUser);
+    if (!targetEmail) return;
+
+    setTesting(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-welcome-email`;
+      const testRecord = {
+        full_name: 'مستخدم تجريبي (Test)',
+        email: targetEmail,
+        code: 'A-0000 (TEST)'
+      };
+      
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({ record: testRecord })
+      });
+      
+      const result = await res.json();
+      if (result.success) {
+        showNotification('تم إرسال إيميل التجربة بنجاح إلى: ' + targetEmail);
+      } else {
+        throw new Error(result.error || 'فشل الإرسال');
+      }
+    } catch (e: any) {
+      showNotification('خطأ: ' + e.message);
+    } finally {
+      setTesting(false);
+    }
   };
 
   return (
@@ -296,21 +351,64 @@ export const SettingsPanel = ({ branchId }: { branchId?: string }) => {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-xs font-black text-slate-500 pr-2">البريد المرسل منه (الاسم أو الدومين)</label>
-            <Input
-              dir="ltr"
-              className="direction-ltr bg-slate-50 border-slate-200"
-              value={senderEmail}
-              onChange={e => setSenderEmail(e.target.value)}
-              placeholder="welcome@domain.com"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 pr-2">البريد المرسل منه</label>
+              <Input
+                dir="ltr"
+                className="direction-ltr bg-slate-50 border-slate-200"
+                value={senderEmail}
+                onChange={e => setSenderEmail(e.target.value)}
+                placeholder="welcome@domain.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 pr-2">SMTP Host</label>
+              <Input
+                dir="ltr"
+                className="direction-ltr bg-slate-50 border-slate-200"
+                value={smtpHost}
+                onChange={e => setSmtpHost(e.target.value)}
+                placeholder="smtp.gmail.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 pr-2">SMTP Port</label>
+              <Input
+                dir="ltr"
+                className="direction-ltr bg-slate-50 border-slate-200"
+                value={smtpPort}
+                onChange={e => setSmtpPort(e.target.value)}
+                placeholder="465"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 pr-2">SMTP User</label>
+              <Input
+                dir="ltr"
+                className="direction-ltr bg-slate-50 border-slate-200"
+                value={smtpUser}
+                onChange={e => setSmtpUser(e.target.value)}
+                placeholder="user@gmail.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 pr-2">SMTP Password (App Password)</label>
+              <Input
+                dir="ltr"
+                type="password"
+                className="direction-ltr bg-slate-50 border-slate-200 text-xs"
+                value={smtpPass}
+                onChange={e => setSmtpPass(e.target.value)}
+                placeholder="•••• •••• •••• ••••"
+              />
+            </div>
           </div>
 
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2 mb-2">
               <span className="text-xs font-black text-slate-400 w-full mb-1">الأوسمة المتاحة (سيتم استبدالها تلقائياً):</span>
-              {['{name}', '{code}', '{branch}', '{created_at}'].map(tag => (
+              {['{name}', '{code}', '{phone}', '{college}', '{branch}', '{created_at}'].map(tag => (
                 <button
                   key={tag}
                   onClick={() => setEmailBody(prev => prev + ' ' + tag)}
@@ -329,7 +427,9 @@ export const SettingsPanel = ({ branchId }: { branchId?: string }) => {
                   __html: emailBody
                     .replace(/{name}/g, 'أحمد محمد')
                     .replace(/{code}/g, 'C-1234')
-                    .replace(/{branch}/g, 'فرع المعادي')
+                    .replace(/{phone}/g, '010XXXXXXXX')
+                    .replace(/{college}/g, 'كلية الهندسة')
+                    .replace(/{branch}/g, 'Campus Main')
                     .replace(/{created_at}/g, new Date().toLocaleDateString('ar-EG'))
                     .replace(/\n/g, '<br/>')
                 }}
@@ -350,14 +450,26 @@ export const SettingsPanel = ({ branchId }: { branchId?: string }) => {
             )}
           </div>
 
-          <Button
-            onClick={saveSettings}
-            className="w-full h-14 bg-slate-900 rounded-2xl shadow-xl shadow-slate-200 hover:shadow-slate-300 transform hover:-translate-y-1 transition-all"
-            disabled={saving}
-          >
-            {saving ? <Loader2 className="animate-spin ml-2" /> : <Save className="ml-2" />}
-            حفظ إعدادات البريد
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-4 pt-4">
+            <Button
+                onClick={handleSendTestEmail}
+                className="flex-1 h-14 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-2xl border-2 border-indigo-100 transition-all font-black text-sm"
+                variant="outline"
+                disabled={testing}
+            >
+                {testing ? <Loader2 className="animate-spin ml-2" /> : <Mail className="ml-2" />}
+                إرسال تجربة (Email Test)
+            </Button>
+            
+            <Button
+                onClick={saveSettings}
+                className="flex-1 h-14 bg-slate-900 text-white rounded-2xl shadow-xl shadow-slate-200 hover:shadow-slate-400 transform hover:-translate-y-1 transition-all font-black text-sm"
+                disabled={saving}
+            >
+                {saving ? <Loader2 className="animate-spin ml-2" /> : <Save className="ml-2" />}
+                حفظ الإعدادات النهائية
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

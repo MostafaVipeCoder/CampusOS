@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Download, Mail, Phone, MoreVertical, Plus, X, Edit, QrCode, Send, Trash2, CheckCircle2, Loader2, ChevronUp, AlertCircle } from 'lucide-react';
+import { Search, Filter, Download, Mail, Phone, MoreVertical, Plus, X, Edit, QrCode, Send, Trash2, CheckCircle2, Loader2, ChevronUp, AlertCircle, Clock } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../lib/supabase';
 import { Tables } from '../database.types';
@@ -11,15 +11,40 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
   // --- STATE ---
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeModal, setActiveModal] = useState<'add' | 'edit' | 'qr' | null>(null);
+  const [activeModal, setActiveModal] = useState<'add' | 'edit' | 'qr' | 'email' | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Form State
   const [formData, setFormData] = useState<Partial<Customer>>({
-    full_name: '', phone: '', email: '', gender: 'Male', birth_date: '', referral_source: '', is_active: true
+    full_name: '', phone: '', email: '', gender: 'Male', birth_date: '', referral_source: '', is_active: true, college: ''
   });
+
+  const [emailSubject, setEmailSubject] = useState('رسالة من Campus');
+  const [emailBody, setEmailBody] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+
+  const colleges = [
+    'كلية الهندسة',
+    'كلية الطب',
+    'كلية الصيدلة',
+    'كلية الحاسبات والمعلومات',
+    'كلية التجارة',
+    'كلية الآداب',
+    'كلية الحقوق',
+    'كلية العلوم',
+    'كلية الإعلام',
+    'كلية الألسن',
+    'كلية الاقتصاد والعلوم السياسية',
+    'كلية طب الأسنان',
+    'كلية التربية',
+    'كلية الزراعة',
+    'كلية الفنون الجميلة',
+    'كلية الفنون التطبيقية',
+    'أخرى'
+  ];
 
   // Pagination & Sorting State
   const [currentPage, setCurrentPage] = useState(1);
@@ -83,7 +108,8 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
         .select('*', { count: 'exact' });
 
       if (searchTerm) {
-        query = query.or(`full_name.ilike.%${searchTerm}%,code.ilike.%${searchTerm}%`);
+        // Expand search to include name, code, email, and phone
+        query = query.or(`full_name.ilike.%${searchTerm}%,code.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%`);
       }
 
       const { data, error, count } = await query
@@ -152,6 +178,7 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
           gender: formData.gender,
           birth_date: formData.birth_date,
           referral_source: formData.referral_source,
+          college: formData.college,
           code: generatedCode, 
         }] as any)
         .select()
@@ -210,14 +237,114 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
   };
 
   // 3. Resend Email
-  const handleResendEmail = (email: string | null) => {
-    if (!email) return;
-    showNotification(`تم إعادة إرسال بريد الترحيب إلى ${email}`);
+  const handleResendEmail = async (customer: Customer) => {
+    if (!customer.email) return;
+    try {
+      showNotification(`جاري إرسال البريد إلى ${customer.email}...`);
+      
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-welcome-email`;
+      
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({ record: customer })
+      });
+      
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || 'فشل الإرسال عبر الخادم');
+      
+      showNotification(`تم إعادة إرسال الكود (${customer.code}) إلى ${customer.email} بنجاح!`);
+    } catch (err: any) {
+      console.error('Email Resend Error:', err);
+      showNotification('خطأ في إعادة الإرسال: ' + err.message);
+    }
   };
+
+  const handleSendCustomEmail = async () => {
+    if (!selectedCustomer || !selectedCustomer.email) return;
+    if (!emailSubject || !emailBody) {
+      showNotification('يرجى كتابة الموضوع ومحتوى الرسالة');
+      return;
+    }
+
+    setSendingEmail(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-custom-email`;
+      
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({ 
+          customerId: selectedCustomer.id,
+          subject: emailSubject,
+          body: emailBody
+        })
+      });
+      
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || 'فشل الإرسال');
+      
+      showNotification(`تم إرسال البريد إلى ${selectedCustomer.email} بنجاح!`);
+      setActiveModal(null);
+      setEmailBody('');
+    } catch (err: any) {
+      console.error('Custom Email Error:', err);
+      showNotification('خطأ في الإرسال: ' + err.message);
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const openEmailModal = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setEmailBody(`أهلاً ${customer.full_name}،\n\n`);
+    setActiveModal('email');
+  };
+
+  const handleDeleteCustomer = async (customer: Customer) => {
+    if (!window.confirm(`هل أنت متأكد من حذف العميل ${customer.full_name} نهائياً؟ \nسيتم حذف جميع سجلاته (الزيارات، الطلبات، الاشتراكات، الجلسات) ولا يمكن التراجع عن هذا الإجراء.`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', customer.id)
+        .select();
+
+      if (error) {
+        if (error.code === '23503') {
+          throw new Error('لا يمكن حذف هذا العميل لوجود سجلات مرتبطة به (زيارات، حجوزات، أو اشتراكات). يمكنك تعطيل الحساب بدلاً من حذفه.');
+        }
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error('لم يتم حذف أي سجل. قد لا تملك الصلاحيات الكافية لحذف هذا العميل.');
+      }
+
+      showNotification('تم حذف العميل بنجاح');
+      // fetchCustomers(); // Handled by realtime
+    } catch (error: any) {
+      console.error('Delete Error:', error);
+      alert('خطأ في الحذف: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   // Helpers
   const resetForm = () => {
-    setFormData({ full_name: '', phone: '', email: '', gender: 'Male', birth_date: '', referral_source: '', is_active: true });
+    setFormData({ full_name: '', phone: '', email: '', gender: 'Male', birth_date: '', referral_source: '', is_active: true, college: '' });
     setActiveModal(null);
     setSelectedCustomer(null);
   };
@@ -351,26 +478,28 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
                 </td>
                 <td className="px-6 py-6 text-center">
                   {customer.email ? (
-                    <span className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 mx-auto w-fit ${customer.email_status === 'sent'
-                      ? 'bg-emerald-50 text-emerald-600'
-                      : customer.email_status === 'failed'
-                        ? 'bg-rose-50 text-rose-600'
-                        : 'bg-slate-50 text-slate-400'
+                    <span 
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 mx-auto w-fit cursor-help transition-all ${
+                        customer.email_status === 'sent' ? 'bg-emerald-50 text-emerald-600' :
+                        customer.email_status === 'failed' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
+                        customer.email_status === 'sending' ? 'bg-amber-50 text-amber-600' :
+                        'bg-slate-50 text-slate-400'
                       }`}
-                      title={customer.email_status === 'failed' ? (customer.email_error || 'خطأ غير معروف') : ''}
+                      title={customer.email_error || (customer.email_status === 'failed' ? 'خطأ غير معروف في السيرفر' : 'في انتظار بدء الإرسال')}
+                      onClick={() => {
+                        if (customer.email_status === 'failed') {
+                          alert(`تفاصيل الخطأ:\n${customer.email_error || 'خطأ غير معروف'}\n\nتأكد من إعدادات SMTP في لوحة التحكم.`);
+                        }
+                      }}
                     >
                       {customer.email_status === 'sent' ? (
-                        <>
-                          <CheckCircle2 size={10} /> تم الإرسال
-                        </>
+                        <><CheckCircle2 size={10} /> تم الإرسال</>
                       ) : customer.email_status === 'failed' ? (
-                        <>
-                          <X size={10} /> تعذر الإرسال
-                        </>
+                        <><AlertCircle size={10} /> فشل الإرسال</>
+                      ) : customer.email_status === 'sending' ? (
+                        <><Loader2 size={10} className="animate-spin" /> جاري الإرسال...</>
                       ) : (
-                        <>
-                          <Loader2 size={10} className="animate-spin" /> قيد الانتظار
-                        </>
+                        <><Clock size={10} /> قيد الانتظار</>
                       )}
                     </span>
                   ) : (
@@ -383,8 +512,10 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
                   </span>
                 </td>
                 <td className="px-8 py-6 text-left">
-                  <div className="flex justify-end gap-2 opacity-150 lg:opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => openEditModal(customer)} title="تعديل" className="p-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-colors"><Edit size={16} /></button>
+                  <div className="flex justify-end gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => openEditModal(customer)} title="تعديل" className="p-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
+                      <Edit size={16} />
+                    </button>
                     <button 
                       onClick={() => {
                         if (customer.qr_code) {
@@ -399,7 +530,31 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
                     >
                       <QrCode size={16} />
                     </button>
-                    {customer.email && <button onClick={() => handleResendEmail(customer.email)} title="إعادة إرسال البريد" className="p-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-amber-50 hover:text-amber-600 transition-colors"><Send size={16} /></button>}
+                    {customer.email && (
+                      <>
+                        <button 
+                          onClick={() => handleResendEmail(customer)} 
+                          title="إعادة إرسال البريد الترحيبي" 
+                          className="p-2 bg-slate-50 text-amber-500 rounded-xl hover:bg-amber-100 hover:text-amber-700 transition-colors"
+                        >
+                          <Send size={16} />
+                        </button>
+                        <button 
+                          onClick={() => openEmailModal(customer)} 
+                          title="إرسال بريد مخصص" 
+                          className="p-2 bg-slate-50 text-indigo-500 rounded-xl hover:bg-indigo-100 hover:text-indigo-700 transition-colors"
+                        >
+                          <Mail size={16} />
+                        </button>
+                      </>
+                    )}
+                    <button 
+                      onClick={() => handleDeleteCustomer(customer)} 
+                      title="حذف العميل" 
+                      className="p-2 bg-slate-50 text-rose-500 rounded-xl hover:bg-rose-100 hover:text-rose-700 transition-colors"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -568,6 +723,18 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
                     <option value="Other">أخرى</option>
                   </select>
                 </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-black text-slate-700 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                    الكلية
+                  </label>
+                  <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-500 focus:bg-white transition-all appearance-none cursor-pointer"
+                    value={formData.college || ''} onChange={e => setFormData({ ...formData, college: e.target.value })}>
+                    <option value="">اختر الكلية...</option>
+                    {colleges.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
               </div>
 
               <div className="pt-6 shrink-0 border-t border-slate-100">
@@ -689,7 +856,70 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
         </div>
       )}
 
+      {/* 4. Custom Email Modal */}
+      {activeModal === 'email' && selectedCustomer && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xl p-0 sm:p-4 animate-in fade-in transition-all">
+          <div className="bg-white w-full max-w-xl rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 duration-500">
+            <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 p-8 flex justify-between items-center text-white">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-white/20 rounded-2xl">
+                  <Mail size={24} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black">إرسال بريد مخصص</h3>
+                  <p className="text-indigo-200 text-xs font-bold uppercase tracking-widest mt-1">إلى: {selectedCustomer.full_name}</p>
+                </div>
+              </div>
+              <button onClick={resetForm} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X size={24} /></button>
+            </div>
+            
+            <div className="p-8 space-y-6">
+              <div className="space-y-2">
+                <label className="text-sm font-black text-slate-700">عنوان الرسالة (Subject)</label>
+                <input 
+                  type="text" 
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
+                  value={emailSubject}
+                  onChange={e => setEmailSubject(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-black text-slate-700">محتوى الرسالة</label>
+                <textarea 
+                  className="w-full h-48 bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-500 transition-all resize-none"
+                  value={emailBody}
+                  onChange={e => setEmailBody(e.target.value)}
+                  placeholder="اكتب رسالتك هنا..."
+                />
+              </div>
+
+              <div className="pt-4">
+                <button 
+                  onClick={handleSendCustomEmail}
+                  disabled={sendingEmail}
+                  className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-lg shadow-xl shadow-indigo-100 hover:bg-indigo-700 hover:-translate-y-1 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {sendingEmail ? (
+                    <>
+                      <Loader2 size={24} className="animate-spin" />
+                      جاري الإرسال...
+                    </>
+                  ) : (
+                    <>
+                      <Send size={24} />
+                      إرسال الرسالة الآن
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile Feedback */}
+
       <div className="fixed bottom-10 right-10 flex flex-col gap-4 z-40 lg:hidden pointer-events-none">
         <div className="bg-indigo-600 text-white px-6 py-4 rounded-3xl shadow-2xl shadow-indigo-200 animate-pulse border-2 border-white">
           <p className="text-[12px] font-black uppercase tracking-widest flex items-center gap-2">

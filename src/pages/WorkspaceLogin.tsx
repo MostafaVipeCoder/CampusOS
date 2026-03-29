@@ -13,7 +13,7 @@ export const WorkspaceLogin = () => {
   const [activeTab, setActiveTab] = useState<activeTabType>('session');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [gender, setGender] = useState('male');
+  const [gender, setGender] = useState('Male');
   const [birthDate, setBirthDate] = useState('');
   const [userCode, setUserCode] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -28,18 +28,26 @@ export const WorkspaceLogin = () => {
   const [college, setCollege] = useState('');
   const [customCollege, setCustomCollege] = useState('');
   const [showCustomCollege, setShowCustomCollege] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [regSuccessData, setRegSuccessData] = useState<{name: string, code: string, email: string} | null>(null);
 
   const colleges = [
-    'جامعة القاهرة',
-    'جامعة عين شمس',
-    'جامعة حلوان',
-    'جامعة المنيا',
-    'جامعة النيل',
-    'الجامعة الأمريكية بالقاهرة',
-    'الجامعة الألمانية بالقاهرة',
-    'جامعة المستقبل',
-    'جامعة أكتوبر للعلوم الحديثة والآداب (MSA)',
-    'جامعة مصر للعلوم والتكنولوجيا (MUST)',
+    'كلية الهندسة',
+    'كلية الطب',
+    'كلية الصيدلة',
+    'كلية الحاسبات والمعلومات',
+    'كلية التجارة',
+    'كلية الآداب',
+    'كلية الحقوق',
+    'كلية العلوم',
+    'كلية الإعلام',
+    'كلية الألسن',
+    'كلية الاقتصاد والعلوم السياسية',
+    'كلية طب الأسنان',
+    'كلية التربية',
+    'كلية الزراعة',
+    'كلية الفنون الجميلة',
+    'كلية الفنون التطبيقية',
     'أخرى'
   ];
 
@@ -277,11 +285,11 @@ export const WorkspaceLogin = () => {
 
       if (createError) throw createError;
 
-      /* 
       // Automatically send the welcome email
       try {
         const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-welcome-email`;
-        await fetch(url, {
+        
+        const res = await fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -289,14 +297,39 @@ export const WorkspaceLogin = () => {
             },
             body: JSON.stringify({ record: createdCustomer })
         });
-      } catch (emailErr) {
-        console.error('Failed to send welcome email:', emailErr);
+
+        if (res.ok) {
+            console.log('Welcome email sent successfully to:', createdCustomer.email);
+            setRegSuccessData({ name: createdCustomer.full_name, code: createdCustomer.code, email: createdCustomer.email });
+            setShowSuccessModal(true);
+        } else {
+            const errData = await res.json().catch(() => ({}));
+            console.warn('Welcome email trigger returned non-ok status:', errData);
+            
+            // Log failure to database
+            await supabase.from('customers').update({ 
+              email_status: 'failed', 
+              email_error: errData.error || 'Server error' 
+            }).eq('id', createdCustomer.id);
+
+            setRegSuccessData({ name: createdCustomer.full_name, code: createdCustomer.code, email: '' });
+            setShowSuccessModal(true);
+        }
+      } catch (emailErr: any) {
+        console.error('Network error during welcome email trigger:', emailErr);
+        
+        // Log failure to database
+        await supabase.from('customers').update({ 
+          email_status: 'failed', 
+          email_error: emailErr.message || 'Network error' 
+        }).eq('id', createdCustomer.id);
+
+        setRegSuccessData({ name: createdCustomer.full_name, code: createdCustomer.code, email: '' });
+        setShowSuccessModal(true);
       }
-      */
 
       setUserCode(generatedCode);
       setIsSignUp(false);
-      alert(`تم التسجيل بنجاح! كود الدخول الخاص بك هو: ${generatedCode}`);
       
     } catch (err: any) {
       setError(err.message || 'حدث خطأ أثناء التسجيل.');
@@ -799,6 +832,19 @@ export const WorkspaceLogin = () => {
             </div>
 
             <div className="space-y-1.5">
+              <label className="text-sm font-bold text-slate-400 block ml-1">البريد الإلكتروني</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-[#0B0F19]/60 border border-white/10 rounded-2xl px-5 py-4 text-white font-bold text-left focus:outline-none focus:border-[#1e75b9] focus:ring-1 focus:ring-[#1e75b9] transition-all"
+                placeholder="example@mail.com"
+                dir="ltr"
+              />
+            </div>
+
+            <div className="space-y-1.5">
               <label className="text-sm font-bold text-slate-400 block ml-1">تاريخ الميلاد</label>
               <input
                 type="date"
@@ -845,15 +891,15 @@ export const WorkspaceLogin = () => {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => setGender('male')}
-                  className={`py-3 rounded-xl font-bold transition-all border ${gender === 'male' ? 'bg-[#1e75b9] border-[#1e75b9] text-white' : 'bg-[#0B0F19]/60 border-white/10 text-slate-400'}`}
+                  onClick={() => setGender('Male')}
+                  className={`py-3 rounded-xl font-bold transition-all border ${gender === 'Male' ? 'bg-[#1e75b9] border-[#1e75b9] text-white' : 'bg-[#0B0F19]/60 border-white/10 text-slate-400'}`}
                 >
                   ذكر
                 </button>
                 <button
                   type="button"
-                  onClick={() => setGender('female')}
-                  className={`py-3 rounded-xl font-bold transition-all border ${gender === 'female' ? 'bg-[#1e75b9] border-[#1e75b9] text-white' : 'bg-[#0B0F19]/60 border-white/10 text-slate-400'}`}
+                  onClick={() => setGender('Female')}
+                  className={`py-3 rounded-xl font-bold transition-all border ${gender === 'Female' ? 'bg-[#1e75b9] border-[#1e75b9] text-white' : 'bg-[#0B0F19]/60 border-white/10 text-slate-400'}`}
                 >
                   أنثى
                 </button>
@@ -937,6 +983,59 @@ export const WorkspaceLogin = () => {
         )}
       </div>
       {finalBill && <FinalReceiptModal bill={finalBill} onClose={() => setFinalBill(null)} />}
+      {/* Registration Success Modal */}
+      {showSuccessModal && regSuccessData && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0B0F19]/90 backdrop-blur-xl animate-in fade-in duration-500 p-4">
+          <div className="w-full max-w-sm bg-gradient-to-br from-[#1e75b9]/20 to-[#1ed788]/20 border border-white/10 rounded-[3rem] p-8 text-center relative overflow-hidden shadow-2xl animate-in zoom-in-95 duration-500">
+            {/* Background Orbs */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#1ed788]/20 rounded-full blur-3xl -mr-16 -mt-16" />
+            <div className="absolute bottom-0 left-0 w-32 h-32 bg-[#1e75b9]/20 rounded-full blur-3xl -ml-16 -mb-16" />
+
+            {/* Content */}
+            <div className="relative space-y-6">
+              <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto ring-4 ring-emerald-500/10 scale-110 animate-pulse">
+                <CheckCircle2 size={40} className="text-[#1ed788]" />
+              </div>
+
+              <div>
+                <h3 className="text-2xl font-black text-white mb-2 font-['Cairo']">تم التسجيل بنجاح! 🎉</h3>
+                <p className="text-slate-400 text-sm font-bold font-['Cairo'] px-4">
+                  أهلاً بك <span className="text-white">{regSuccessData.name}</span> في عائلة Campus
+                </p>
+              </div>
+
+              <div className="bg-[#0B0F19]/60 border border-white/10 rounded-[2rem] p-6 space-y-3 shadow-inner">
+                <p className="text-xs font-black text-[#1e75b9] uppercase tracking-widest">كود الدخول الخاص بك</p>
+                <div className="text-5xl font-black text-[#1ed788] font-mono tracking-tighter drop-shadow-[0_0_15px_rgba(30,215,136,0.3)]">
+                  {regSuccessData.code}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-white/5 border border-white/5 py-3 px-4 rounded-2xl flex items-center gap-2 justify-center">
+                  <Info size={14} className="text-blue-400" />
+                  <p className="text-[10px] text-white/50 font-bold font-['Cairo'] leading-relaxed">
+                    يرجى أخذ لقطة شاشة (Screenshot) لهذا الكود لاستخدامه عند الحضور.
+                    {regSuccessData.email && <span className="block text-emerald-400 mt-1">تم إرسال نسخة لبريدك: {regSuccessData.email}</span>}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setShowSuccessModal(false);
+                    // Force the user back to the login screen with the code pre-filled
+                    setUserCode(regSuccessData.code);
+                    setIsSignUp(false);
+                  }}
+                  className="w-full bg-white text-[#0B0F19] rounded-2xl py-4 font-black text-lg hover:bg-slate-100 transition-all active:scale-95 shadow-xl shadow-white/5"
+                >
+                  فهمت، ابدأ الآن
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
