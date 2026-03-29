@@ -297,7 +297,7 @@ export const RoomsKiosk = () => {
         ))}
       </div>
 
-      {/* Futuristic Footer */}
+      {/* Futuristic Footer
       <motion.footer 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -309,7 +309,7 @@ export const RoomsKiosk = () => {
            <div className="w-px h-4 bg-white/10" />
            <span className="text-white/40">Powered by Antigravity AI</span>
         </div>
-      </motion.footer>
+      </motion.footer> */}
     </div>
   );
 };

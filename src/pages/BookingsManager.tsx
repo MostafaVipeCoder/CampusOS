@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { ChevronRight, ChevronLeft, Plus, Award, Clock, MoreVertical, TrendingUp, Calendar, Users, Monitor, PenTool, Armchair, X, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Booking, RoomConfig } from '../types';
+import { useGoogleCalendar } from '../hooks/useGoogleCalendar';
+import { LogIn, LogOut, Check } from 'lucide-react';
 
 export const BookingsManager = ({ branchId }: { branchId?: string }) => {
   const [selectedRoom, setSelectedRoom] = useState<string>('all');
@@ -11,6 +13,11 @@ export const BookingsManager = ({ branchId }: { branchId?: string }) => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [rooms, setRooms] = useState<RoomConfig[]>([]);
   const [loading, setLoading] = useState(true);
+  const { isSignedIn, handleSignIn, handleSignOut, createEvent, listEvents } = useGoogleCalendar();
+
+  useEffect(() => {
+    if (isSignedIn) fetchBookings();
+  }, [isSignedIn]);
 
   useEffect(() => {
     if (branchId) {
@@ -46,7 +53,7 @@ export const BookingsManager = ({ branchId }: { branchId?: string }) => {
       .eq('branch_id', branchId);
 
     if (data) {
-      const formatted: Booking[] = data.map(b => ({
+      const dbBookings: Booking[] = data.map(b => ({
         id: b.id,
         room: b.service_id,
         user: b.user_name || 'عميل',
@@ -58,7 +65,40 @@ export const BookingsManager = ({ branchId }: { branchId?: string }) => {
         attendees: b.attendees,
         extras: b.extras as any
       }));
-      setBookings(formatted);
+
+      // Pull Google Calendar Bookings if signed in
+      let gBookings: Booking[] = [];
+      if (isSignedIn) {
+          try {
+              const events = await listEvents();
+              gBookings = events.map((event: any) => {
+                  const start = new Date(event.start.dateTime || event.start.date);
+                  const end = new Date(event.end.dateTime || event.end.date);
+                  const duration = Math.max(1, (end.getTime() - start.getTime()) / (1000 * 60 * 60));
+                  
+                  // Improved room matching (Summary or Location)
+                  const roomMatch = rooms.find(r => 
+                      event.summary?.toLowerCase().includes(r.name.toLowerCase()) || 
+                      event.location?.toLowerCase().includes(r.name.toLowerCase())
+                  );
+
+                  return {
+                      id: event.id,
+                      room: roomMatch?.id || 'unmapped',
+                      user: event.summary,
+                      date: start.toISOString().split('T')[0],
+                      startTime: start.getHours(),
+                      duration: duration,
+                      type: 'GoogleCalendar' as any,
+                      isGoogle: true
+                  };
+              });
+          } catch (e) {
+              console.error('Failed to sync Google events:', e);
+          }
+      }
+
+      setBookings([...dbBookings, ...gBookings]);
     }
     setLoading(false);
   };
@@ -112,6 +152,21 @@ export const BookingsManager = ({ branchId }: { branchId?: string }) => {
 
     if (error) alert(error.message);
     else {
+      // Sync to Google Calendar if signed in
+      if (isSignedIn) {
+          try {
+              await createEvent({
+                  booking_date: bookingForm.date,
+                  start_time: startHour * 60, // Conv to mins
+                  end_time: (startHour + Number(bookingForm.duration)) * 60,
+                  user_name: bookingForm.user,
+                  status: 'Confirmed'
+              }, room.name);
+          } catch (e) {
+              console.error('Google Calendar Sync Error:', e);
+          }
+      }
+      
       setActiveModal(null);
       fetchBookings();
     }
@@ -166,12 +221,15 @@ export const BookingsManager = ({ branchId }: { branchId?: string }) => {
                     <div
                       key={booking.id}
                       style={{ top: `${(booking.startTime - 8) * 96 + 60}px`, height: `${booking.duration * 96}px` }}
-                      className={`absolute inset-x-1 z-10 p-2 rounded-xl shadow-lg border-r-4 flex flex-col justify-between overflow-hidden transition-all hover:scale-[1.02] cursor-pointer ${booking.type === 'Contracted' ? 'bg-indigo-600 text-white border-indigo-400' : 'bg-emerald-50 text-emerald-800 border-emerald-400'
+                      className={`absolute inset-x-1 z-10 p-2 rounded-xl shadow-lg border-r-4 flex flex-col justify-between overflow-hidden transition-all hover:scale-[1.02] cursor-pointer ${
+                          booking.type === 'GoogleCalendar' ? 'bg-amber-100 text-amber-800 border-amber-400' :
+                          booking.type === 'Contracted' ? 'bg-indigo-600 text-white border-indigo-400' : 
+                          'bg-emerald-50 text-emerald-800 border-emerald-400'
                         }`}
                     >
                       <div>
                         <p className="text-[10px] font-black uppercase opacity-60 flex items-center gap-1">
-                          {booking.type === 'Contracted' ? <Award size={10} /> : <Clock size={10} />}
+                          {booking.type === 'GoogleCalendar' ? <Calendar size={10} /> : booking.type === 'Contracted' ? <Award size={10} /> : <Clock size={10} />}
                           {booking.startTime}:00 - {booking.startTime + booking.duration}:00
                         </p>
                         <h5 className="font-black text-xs mt-1 leading-tight">{booking.user}</h5>
@@ -270,12 +328,34 @@ export const BookingsManager = ({ branchId }: { branchId?: string }) => {
             <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() + 1)))} className="hover:text-indigo-600"><ChevronLeft size={18} /></button>
           </div>
 
+        <div className="flex gap-4 items-center">
+          {isSignedIn ? (
+            <button
+               onClick={handleSignOut}
+               className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-indigo-50 text-indigo-600 font-black text-xs hover:bg-indigo-100 transition-all"
+            >
+              <LogOut size={14} />
+              متصل بجوجل
+              <Check size={14} className="text-emerald-500" />
+            </button>
+          ) : (
+            <button
+               onClick={handleSignIn}
+               className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-slate-900 text-white font-black text-xs hover:bg-slate-800 transition-all shadow-lg"
+            >
+              <LogIn size={14} />
+              ربط تقويم جوجل
+            </button>
+          )}
+
           <button
             onClick={() => setActiveModal('add')}
-            className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-2"
+            className="flex items-center gap-3 px-8 py-4 rounded-[2rem] bg-indigo-600 text-white font-black text-sm hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100"
           >
-            <Plus size={18} /> حجز جديد
+            <Plus size={20} />
+            حجز جديد
           </button>
+        </div>
         </div>
       </div>
 
