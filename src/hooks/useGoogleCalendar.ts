@@ -31,7 +31,7 @@ export const useGoogleCalendar = () => {
     gapi.auth2.getAuthInstance().signOut();
   };
 
-  const createEvent = async (booking: any, roomName: string) => {
+  const createEvent = async (calendarId: string, booking: any, roomName: string) => {
     if (!isSignedIn) return;
     
     // booking_date + start_time/end_time in minutes
@@ -56,22 +56,27 @@ export const useGoogleCalendar = () => {
     };
 
     return gapi.client.calendar.events.insert({
-      calendarId: 'primary',
+      calendarId: calendarId || 'primary',
       resource: event,
     });
   };
 
-  const listEvents = async () => {
+  const listEvents = async (calendarId: string) => {
     if (!isSignedIn) return [];
-    const response = await gapi.client.calendar.events.list({
-      calendarId: 'primary',
-      timeMin: (new Date()).toISOString(),
-      showDeleted: false,
-      singleEvents: true,
-      maxResults: 100,
-      orderBy: 'startTime',
-    });
-    return response.result.items;
+    try {
+        const response = await gapi.client.calendar.events.list({
+          calendarId: calendarId || 'primary',
+          timeMin: (new Date()).toISOString(),
+          showDeleted: false,
+          singleEvents: true,
+          maxResults: 100,
+          orderBy: 'startTime',
+        });
+        return response.result.items || [];
+    } catch (e) {
+        console.error(`Error listing events for calendar ${calendarId}:`, e);
+        return [];
+    }
   };
 
   return { isSignedIn, handleSignIn, handleSignOut, createEvent, listEvents };

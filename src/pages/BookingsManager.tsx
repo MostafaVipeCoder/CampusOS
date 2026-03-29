@@ -39,7 +39,8 @@ export const BookingsManager = ({ branchId }: { branchId?: string }) => {
         id: r.id,
         name: r.name_ar || r.name,
         hourlyRate: r.base_price,
-        capacity: r.capacity || 0
+        capacity: r.capacity || 0,
+        googleCalendarId: (r as any).google_calendar_id
       }));
       setRooms(formatted);
     }
@@ -66,33 +67,35 @@ export const BookingsManager = ({ branchId }: { branchId?: string }) => {
         extras: b.extras as any
       }));
 
-      // Pull Google Calendar Bookings if signed in
       let gBookings: Booking[] = [];
       if (isSignedIn) {
           try {
-              const events = await listEvents();
-              gBookings = events.map((event: any) => {
-                  const start = new Date(event.start.dateTime || event.start.date);
-                  const end = new Date(event.end.dateTime || event.end.date);
-                  const duration = Math.max(1, (end.getTime() - start.getTime()) / (1000 * 60 * 60));
-                  
-                  // Improved room matching (Summary or Location)
-                  const roomMatch = rooms.find(r => 
-                      event.summary?.toLowerCase().includes(r.name.toLowerCase()) || 
-                      event.location?.toLowerCase().includes(r.name.toLowerCase())
-                  );
-
-                  return {
-                      id: event.id,
-                      room: roomMatch?.id || 'unmapped',
-                      user: event.summary,
-                      date: start.toISOString().split('T')[0],
-                      startTime: start.getHours(),
-                      duration: duration,
-                      type: 'GoogleCalendar' as any,
-                      isGoogle: true
-                  };
-              });
+              const allGoogleBookings: Booking[] = [];
+              
+              // Fetch events for EACH room that has a calibrated ID
+              for (const room of rooms) {
+                  if (room.googleCalendarId) {
+                      const events = await listEvents(room.googleCalendarId);
+                      const roomBookings = events.map((event: any) => {
+                          const start = new Date(event.start.dateTime || event.start.date);
+                          const end = new Date(event.end.dateTime || event.end.date);
+                          const duration = Math.max(1, (end.getTime() - start.getTime()) / (1000 * 60 * 60));
+                          
+                          return {
+                              id: event.id,
+                              room: room.id,
+                              user: event.summary,
+                              date: start.toISOString().split('T')[0],
+                              startTime: start.getHours(),
+                              duration: duration,
+                              type: 'GoogleCalendar' as any,
+                              isGoogle: true
+                          };
+                      });
+                      allGoogleBookings.push(...roomBookings);
+                  }
+              }
+              gBookings = allGoogleBookings;
           } catch (e) {
               console.error('Failed to sync Google events:', e);
           }
@@ -153,9 +156,9 @@ export const BookingsManager = ({ branchId }: { branchId?: string }) => {
     if (error) alert(error.message);
     else {
       // Sync to Google Calendar if signed in
-      if (isSignedIn) {
+      if (isSignedIn && room.googleCalendarId) {
           try {
-              await createEvent({
+              await createEvent(room.googleCalendarId, {
                   booking_date: bookingForm.date,
                   start_time: startHour * 60, // Conv to mins
                   end_time: (startHour + Number(bookingForm.duration)) * 60,

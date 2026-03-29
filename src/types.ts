@@ -8,6 +8,7 @@ export interface RoomConfig {
   hourlyRate: number;
   capacity: number;
   features?: string[];
+  googleCalendarId?: string;
 }
 
 export interface Booking {
