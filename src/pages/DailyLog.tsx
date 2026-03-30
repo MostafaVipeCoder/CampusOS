@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarDays, ShoppingBag, Clock, CheckCircle2, User, RefreshCw, X, Receipt, TrendingUp, TrendingDown, Trash2, Tag, Sparkles, ChevronLeft, ArrowUpRight, ArrowDownRight, Edit3, Save, AlertCircle } from 'lucide-react';
+import { CalendarDays, ShoppingBag, Clock, CheckCircle2, User, RefreshCw, X, Receipt, TrendingUp, TrendingDown, Trash2, Tag, Sparkles, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Edit3, Save, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui';
 
@@ -29,6 +29,8 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
   // Edit Modal States
   const [editingSession, setEditingSession] = useState<Session | null>(null);
   const [editStartTime, setEditStartTime] = useState('');
@@ -39,7 +41,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
   useEffect(() => {
     if (!branchId) return;
     
-    fetchTodayLog();
+    fetchLogData();
 
     const channel = (supabase as any)
       .channel(`daily_log_${branchId}`)
@@ -48,41 +50,48 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
         schema: 'public', 
         table: 'workspace_sessions',
         filter: `branch_id=eq.${branchId}` 
-      }, () => fetchTodayLog())
+      }, () => fetchLogData())
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
         table: 'subscriptions',
         filter: `branch_id=eq.${branchId}` 
-      }, () => fetchTodayLog())
+      }, () => fetchLogData())
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
         table: 'expenses',
         filter: `branch_id=eq.${branchId}` 
-      }, () => fetchTodayLog())
+      }, () => fetchLogData())
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [branchId]);
+  }, [branchId, selectedDate]);
 
-  const fetchTodayLog = async () => {
+  const fetchLogData = async () => {
     if (!branchId) return;
     try {
       setLoading(true);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayISO = today.toISOString();
-      const dateStr = todayISO.split('T')[0];
+      
+      // Calculate date range for the selected day in local time
+      const startOfDay = new Date(selectedDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(selectedDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const startISO = startOfDay.toISOString();
+      const endISO = endOfDay.toISOString();
 
       // 1. Fetch Sessions with Subscriptions
       const { data: sessionsData, error: errSessions } = await (supabase as any)
         .from('workspace_sessions')
         .select(`*, customers(full_name, code, subscriptions(*))`)
         .eq('branch_id', branchId)
-        .gte('created_at', todayISO)
+        .gte('created_at', startISO)
+        .lte('created_at', endISO)
         .order('created_at', { ascending: false });
 
       if (errSessions) throw errSessions;
@@ -107,20 +116,21 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
 
       setSessions(sorted);
 
-      // 2. Fetch Subscriptions today
+      // 2. Fetch Subscriptions for the selected day
       const { data: subsData } = await (supabase as any)
         .from('subscriptions')
         .select('price')
         .eq('branch_id', branchId)
-        .gte('created_at', todayISO);
+        .gte('created_at', startISO)
+        .lte('created_at', endISO);
       setSubscriptions(subsData || []);
 
-      // 3. Fetch Expenses today
+      // 3. Fetch Expenses for the selected day
       const { data: expData } = await (supabase as any)
         .from('expenses')
         .select('*')
         .eq('branch_id', branchId)
-        .eq('date', dateStr);
+        .eq('date', selectedDate);
       setExpenses(expData || []);
 
     } catch (err) {
@@ -128,6 +138,12 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const navigateDate = (days: number) => {
+    const d = new Date(selectedDate);
+    d.setDate(d.getDate() + days);
+    setSelectedDate(d.toISOString().split('T')[0]);
   };
 
   const handleDeleteSession = async (id: string) => {
@@ -139,7 +155,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
         .eq('id', id);
 
       if (error) throw error;
-      fetchTodayLog();
+      fetchLogData();
     } catch (err: any) {
       alert('خطأ في المسح: ' + err.message);
     }
@@ -160,7 +176,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
 
       if (error) throw error;
       setEditingSession(null);
-      fetchTodayLog();
+      fetchLogData();
     } catch (err: any) {
       alert('خطأ في التحديث: ' + err.message);
     }
@@ -174,7 +190,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
         .eq('id', sessionId);
 
       if (error) throw error;
-      fetchTodayLog();
+      fetchLogData();
     } catch (err: any) {
       alert('خطأ في إلغاء طلب الخروج: ' + err.message);
     }
@@ -200,12 +216,42 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
            </div>
           <p className="text-slate-400 font-bold text-sm uppercase tracking-widest mr-10 opacity-70">Daily Activity Intelligence</p>
         </div>
+
+        {/* Date Navigator */}
+        <div className="bg-white/50 backdrop-blur-md p-2 rounded-[2rem] border border-white shadow-sm flex items-center gap-3">
+          <button 
+            onClick={() => navigateDate(1)}
+            className="p-4 hover:bg-white rounded-2xl transition-all hover:shadow-sm text-slate-400 hover:text-indigo-600 active:scale-90"
+          >
+            <ChevronRight size={24} />
+          </button>
+          
+          <div className="flex flex-col items-center px-4 min-w-[180px]">
+            <input 
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="bg-transparent text-xl font-black text-slate-800 border-none outline-none text-center cursor-pointer hover:text-indigo-600 transition-colors"
+            />
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              {new Date(selectedDate).toLocaleDateString('ar-EG', { weekday: 'long' })}
+            </span>
+          </div>
+
+          <button 
+            onClick={() => navigateDate(-1)}
+            className="p-4 hover:bg-white rounded-2xl transition-all hover:shadow-sm text-slate-400 hover:text-indigo-600 active:scale-90"
+          >
+            <ChevronLeft size={24} />
+          </button>
+        </div>
+
         <button 
-          onClick={fetchTodayLog}
-          className="bg-white text-indigo-600 px-8 py-4 rounded-[1.5rem] font-black shadow-sm border border-indigo-100 hover:bg-indigo-50 transition-all flex items-center gap-3 active:scale-95"
+          onClick={fetchLogData}
+          className="bg-white text-indigo-600 px-8 py-5 rounded-[1.5rem] font-black shadow-sm border border-indigo-100 hover:bg-indigo-50 transition-all flex items-center gap-3 active:scale-95 h-full"
         >
           <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
-          <span>تحديث البيانات</span>
+          <span>تحديث</span>
         </button>
       </div>
 
