@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { QrCode } from 'lucide-react';
 import { Campus } from './types';
 import { supabase } from './lib/supabase';
 import { Sidebar } from './components/Sidebar';
@@ -23,9 +22,7 @@ import { InventoryPanel } from './pages/InventoryPanel';
 import { ActivitiesPage } from './pages/ActivitiesPage';
 import { RoomsStatus } from './pages/RoomsStatus';
 import { RoomsKiosk } from './pages/RoomsKiosk';
-import { RoomsDatabase } from './pages/RoomsDatabase'; // Add this line
-
-
+import { RoomsDatabase } from './pages/RoomsDatabase';
 
 const DashboardLayout = () => {
   const [branches, setBranches] = useState<Campus[]>([]);
@@ -41,7 +38,6 @@ const DashboardLayout = () => {
         const formatted = data.map(b => ({ id: b.id, name: b.name, color: 'blue' })); 
         setBranches(formatted);
         if (formatted.length > 0) {
-          // Prioritize Cloud branch for consistency with kiosk
           const mainBranch = formatted.find(b => b.name.toLowerCase().includes('cloud')) || formatted[0];
           setCampus(mainBranch);
         }
@@ -51,26 +47,27 @@ const DashboardLayout = () => {
   }, []);
 
   const getPageTitle = (pathname: string) => {
-    switch (pathname) {
-      case '/':
-      case '/dashboard': return 'لوحة القيادة';
-      case '/checkin': return 'بوابة الدخول';
-      case '/admin-sessions': return 'متابعة جلسات مكاتب العمل';
-      case '/daily_log': return 'سجل الحضور اليومي';
-      case '/customers': return 'قاعدة بيانات العملاء';
-      case '/bookings': return 'جدول الحجوزات';
-      case '/subscriptions': return 'إدارة الاشتراكات';
-      case '/contracts': return 'التعاقدات والشراكات';
-      case '/staff': return 'إدارة المهام والأداء';
-      case '/finance': return 'التقارير المالية والتحليل';
-      case '/expenses': return 'سجل المصروفات';
-      case '/inventory': return 'إدارة المخزن';
-      case '/activities': return 'خطة الأنشطة السنوية';
-      case '/rooms-status': return 'حالة الغرف وحجوزات الساعة';
-      case '/rooms-database': return 'قاعدة بيانات الغرف';
-      case '/settings': return 'إعدادات النظام';
-
-      default: return 'Campus OS';
+    const segments = pathname.split('/');
+    const lastSegment = segments[segments.length - 1];
+    
+    switch (lastSegment) {
+      case 'dashboard': return 'لوحة القيادة';
+      case 'checkin': return 'بوابة الدخول';
+      case 'admin-sessions': return 'متابعة جلسات مكاتب العمل';
+      case 'daily_log': return 'سجل الحضور اليومي';
+      case 'customers': return 'قاعدة بيانات العملاء';
+      case 'bookings': return 'جدول الحجوزات';
+      case 'subscriptions': return 'إدارة الاشتراكات';
+      case 'contracts': return 'التعاقدات والشراكات';
+      case 'staff': return 'إدارة المهام والأداء';
+      case 'finance': return 'التقارير المالية والتحليل';
+      case 'expenses': return 'سجل المصروفات';
+      case 'inventory': return 'إدارة المخزن';
+      case 'activities': return 'خطة الأنشطة السنوية';
+      case 'rooms-status': return 'حالة الغرف وحجوزات الساعة';
+      case 'rooms-database': return 'قاعدة بيانات الغرف';
+      case 'settings': return 'إعدادات النظام';
+      default: return 'Cloud Co-Working';
     }
   };
 
@@ -78,7 +75,6 @@ const DashboardLayout = () => {
     <div className="flex min-h-screen bg-transparent font-['Cairo'] text-slate-800 antialiased selection:bg-indigo-500 selection:text-white">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
       
-      {/* Mobile Header Toggle - Modern floating button */}
       <div className="fixed bottom-10 right-10 lg:hidden z-[60]">
         <button 
           onClick={() => setSidebarOpen(!isSidebarOpen)}
@@ -93,13 +89,10 @@ const DashboardLayout = () => {
       </div>
 
       <main className={`flex-1 relative min-h-screen transition-all duration-500 pb-24 lg:pb-0 ${isSidebarOpen ? 'lg:mr-64 blur-sm lg:blur-none pointer-events-none lg:pointer-events-auto' : 'lg:mr-64 mr-0'}`}>
-        {/* Decorative background elements */}
         <div className="absolute top-0 right-0 w-full h-[500px] bg-gradient-to-b from-indigo-50/50 to-transparent -z-10 pointer-events-none" />
         
-        
-        
-        <div className={`responsive-container text-right animate-fade-in-up ${location.pathname === '/finance' ? 'p-10 md:p-14' : 'px-6 py-10 md:px-10 md:py-16'}`}>
-          {location.pathname !== '/finance' && (
+        <div className={`responsive-container text-right animate-fade-in-up ${location.pathname.includes('/finance') ? 'p-10 md:p-14' : 'px-6 py-10 md:px-10 md:py-16'}`}>
+          {!location.pathname.includes('/finance') && (
             <div className="mb-8 md:mb-12 flex flex-col gap-2">
               <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-slate-900 tracking-tight leading-tight">
                 {getPageTitle(location.pathname)}
@@ -111,33 +104,26 @@ const DashboardLayout = () => {
             </div>
           )}
 
-          
           <div className="relative">
             <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard branchId={currentCampus?.id} />} />
-              <Route path="/checkin" element={<CheckinPortal branchId={currentCampus?.id} />} />
-              <Route path="/admin-sessions" element={<WorkspaceAdminSessions branchId={currentCampus?.id} />} />
-              <Route path="/daily_log" element={<DailyLog branchId={currentCampus?.id} />} />
-              <Route path="/customers" element={<CustomerDatabase branchId={currentCampus?.id} />} />
-              <Route path="/bookings" element={<BookingsManager branchId={currentCampus?.id} />} />
-              <Route path="/subscriptions" element={<SubscriptionsPanel branchId={currentCampus?.id} />} />
-              <Route path="/contracts" element={<ContractsPanel branchId={currentCampus?.id} />} />
-              <Route path="/staff" element={<StaffManagement branchId={currentCampus?.id} />} />
-              <Route path="/finance" element={<FinancePanel branchId={currentCampus?.id} />} />
-              <Route path="/expenses" element={<ExpensesPanel branchId={currentCampus?.id} />} />
-              <Route path="/inventory" element={<InventoryPanel branchId={currentCampus?.id} />} />
-              <Route path="/activities" element={<ActivitiesPage branchId={currentCampus?.id} />} />
-              <Route path="/rooms-status" element={<RoomsStatus branchId={currentCampus?.id} />} />
-              <Route path="/rooms-database" element={<RoomsDatabase branchId={currentCampus?.id} />} />
-              <Route path="/settings" element={<SettingsPanel branchId={currentCampus?.id} />} />
-
-              <Route path="*" element={
-                <div className="p-20 text-center glass rounded-[3rem] font-black justify-center items-center flex flex-col gap-4">
-                  <div className="text-6xl text-slate-300">404</div>
-                  <div className="text-xl text-slate-400">الصفحة غير موجودة</div>
-                </div>
-              } />
+              <Route path="/" element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<Dashboard branchId={currentCampus?.id} />} />
+              <Route path="checkin" element={<CheckinPortal branchId={currentCampus?.id} />} />
+              <Route path="admin-sessions" element={<WorkspaceAdminSessions branchId={currentCampus?.id} />} />
+              <Route path="daily_log" element={<DailyLog branchId={currentCampus?.id} />} />
+              <Route path="customers" element={<CustomerDatabase branchId={currentCampus?.id} />} />
+              <Route path="bookings" element={<BookingsManager branchId={currentCampus?.id} />} />
+              <Route path="subscriptions" element={<SubscriptionsPanel branchId={currentCampus?.id} />} />
+              <Route path="contracts" element={<ContractsPanel branchId={currentCampus?.id} />} />
+              <Route path="staff" element={<StaffManagement branchId={currentCampus?.id} />} />
+              <Route path="finance" element={<FinancePanel branchId={currentCampus?.id} />} />
+              <Route path="expenses" element={<ExpensesPanel branchId={currentCampus?.id} />} />
+              <Route path="inventory" element={<InventoryPanel branchId={currentCampus?.id} />} />
+              <Route path="activities" element={<ActivitiesPage branchId={currentCampus?.id} />} />
+              <Route path="rooms-status" element={<RoomsStatus branchId={currentCampus?.id} />} />
+              <Route path="rooms-database" element={<RoomsDatabase branchId={currentCampus?.id} />} />
+              <Route path="settings" element={<SettingsPanel branchId={currentCampus?.id} />} />
+              <Route path="*" element={<Navigate to="dashboard" replace />} />
             </Routes>
           </div>
         </div>
@@ -145,7 +131,6 @@ const DashboardLayout = () => {
     </div>
   );
 };
-
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<any>(null);
@@ -185,18 +170,23 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 export const App = () => {
   return (
     <Routes>
+      <Route path="/" element={<WorkspaceLogin />} />
       <Route path="/workspace" element={<WorkspaceLogin />} />
       <Route path="/rooms-kiosk" element={<RoomsKiosk />} />
-
       <Route path="/login" element={<LoginPage />} />
+      
       <Route 
-        path="/*" 
+        path="/admin/*" 
         element={
           <ProtectedRoute>
             <DashboardLayout />
           </ProtectedRoute>
         } 
       />
+      
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 };
+
+export default App;

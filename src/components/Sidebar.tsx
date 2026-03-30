@@ -14,25 +14,25 @@ export const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
     }
   };
   const menuItems = [
-    { id: 'dashboard', label: 'لوحة القيادة', path: '/dashboard', icon: LayoutDashboard },
-    { id: 'checkin', label: 'بوابة الدخول', path: '/checkin', icon: UserCheck },
-    { id: 'workspace_sessions', label: 'الجلسات', path: '/admin-sessions', icon: Users2 },
-    { id: 'daily_log', label: 'سجل الحضور', path: '/daily_log', icon: ClipboardCheck },
-    { id: 'customers', label: 'قاعدة العملاء', path: '/customers', icon: Users2 },
-    { id: 'subscriptions', label: 'الاشتراكات', path: '/subscriptions', icon: Award },
-    { id: 'contracts', label: 'التعاقدات', path: '/contracts', icon: Layers },
-    { id: 'bookings', label: 'الحجوزات', path: '/bookings', icon: Calendar },
-    { id: 'rooms_serving', label: 'حالة الغرف', path: '/rooms-status', icon: Clock },
-    { id: 'rooms_database', label: 'قاعدة الغرف', path: '/rooms-database', icon: Layers },
+    { id: 'dashboard', label: 'لوحة القيادة', path: '/admin/dashboard', icon: LayoutDashboard },
+    { id: 'checkin', label: 'بوابة الدخول', path: '/admin/checkin', icon: UserCheck },
+    { id: 'workspace_sessions', label: 'الجلسات', path: '/admin/admin-sessions', icon: Users2 },
+    { id: 'daily_log', label: 'سجل الحضور', path: '/admin/daily_log', icon: ClipboardCheck },
+    { id: 'customers', label: 'قاعدة العملاء', path: '/admin/customers', icon: Users2 },
+    { id: 'subscriptions', label: 'الاشتراكات', path: '/admin/subscriptions', icon: Award },
+    { id: 'contracts', label: 'التعاقدات', path: '/admin/contracts', icon: Layers },
+    { id: 'bookings', label: 'الحجوزات', path: '/admin/bookings', icon: Calendar },
+    { id: 'rooms_serving', label: 'حالة الغرف', path: '/admin/rooms-status', icon: Clock },
+    { id: 'rooms_database', label: 'قاعدة الغرف', path: '/admin/rooms-database', icon: Layers },
     { id: 'rooms_kiosk', label: 'شاشة العرض', path: '/rooms-kiosk', icon: Monitor },
-    { id: 'finance', label: 'المالية والتقارير', path: '/finance', icon: Wallet },
+    { id: 'finance', label: 'المالية والتقارير', path: '/admin/finance', icon: Wallet },
 
 
-    { id: 'expenses', label: 'المصروفات', path: '/expenses', icon: Receipt },
-    { id: 'inventory', label: 'المخزن', path: '/inventory', icon: Package },
-    { id: 'activities', label: 'الأنشطة', path: '/activities', icon: Calendar },
-    { id: 'staff', label: 'المهام', path: '/staff', icon: Users },
-    { id: 'settings', label: 'الإعدادات', path: '/settings', icon: Settings },
+    { id: 'expenses', label: 'المصروفات', path: '/admin/expenses', icon: Receipt },
+    { id: 'inventory', label: 'المخزن', path: '/admin/inventory', icon: Package },
+    { id: 'activities', label: 'الأنشطة', path: '/admin/activities', icon: Calendar },
+    { id: 'staff', label: 'المهام', path: '/admin/staff', icon: Users },
+    { id: 'settings', label: 'الإعدادات', path: '/admin/settings', icon: Settings },
   ];
   return (
     <>

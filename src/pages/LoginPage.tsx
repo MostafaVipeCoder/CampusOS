@@ -15,7 +15,7 @@ export const LoginPage = () => {
     React.useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session) {
-                navigate('/dashboard', { replace: true });
+                navigate('/admin', { replace: true });
             }
         });
     }, [navigate]);
@@ -33,7 +33,7 @@ export const LoginPage = () => {
             });
 
             if (error) throw error;
-            navigate('/dashboard');
+            navigate('/admin');
         } catch (err: any) {
             setError(err.message || 'فشل تسجيل الدخول');
         } finally {
