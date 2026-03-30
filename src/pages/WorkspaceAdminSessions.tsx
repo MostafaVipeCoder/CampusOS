@@ -71,7 +71,14 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
         .order('start_time', { ascending: false });
 
       if (error) throw error;
-      setSessions(data as any);
+      
+      const sorted = (data as any[]).sort((a, b) => {
+        if (a.status === 'checkout_requested' && b.status !== 'checkout_requested') return -1;
+        if (a.status !== 'checkout_requested' && b.status === 'checkout_requested') return 1;
+        return new Date(b.start_time).getTime() - new Date(a.start_time).getTime();
+      });
+      
+      setSessions(sorted);
     } catch (err: any) {
       console.error(err);
     } finally {
@@ -161,6 +168,21 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
       fetchSessions();
     } catch (err: any) {
       alert('حدث خطأ أثناء إنهاء الجلسة');
+      console.error(err);
+    }
+  };
+
+  const handleCancelCheckoutRequest = async (sessionId: string) => {
+    try {
+      const { error } = await supabase
+        .from('workspace_sessions')
+        .update({ status: 'active' })
+        .eq('id', sessionId);
+
+      if (error) throw error;
+      fetchSessions();
+    } catch (err: any) {
+      alert('حدث خطأ أثناء إلغاء طلب الخروج');
       console.error(err);
     }
   };
@@ -347,16 +369,26 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                         )}
                       </td>
                       <td className="py-6 px-6">
-                        <button
-                          onClick={() => handlePrepareCheckout(session)}
-                          className={`px-6 py-3 rounded-2xl text-white font-black text-sm transition-all hover:-translate-y-1 active:scale-95 shadow-lg ${
-                            session.status === 'checkout_requested' 
-                              ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' 
-                              : 'bg-slate-900 hover:bg-black shadow-slate-900/20'
-                          }`}
-                        >
-                          إنهاء و محاسبة
-                        </button>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            onClick={() => handlePrepareCheckout(session)}
+                            className={`px-6 py-3 rounded-2xl text-white font-black text-sm transition-all hover:-translate-y-1 active:scale-95 shadow-lg ${
+                              session.status === 'checkout_requested' 
+                                ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' 
+                                : 'bg-slate-900 hover:bg-black shadow-slate-900/20'
+                            }`}
+                          >
+                            إنهاء و محاسبة
+                          </button>
+                          {session.status === 'checkout_requested' && (
+                            <button
+                              onClick={() => handleCancelCheckoutRequest(session.id)}
+                              className="px-4 py-1.5 text-rose-500 hover:bg-rose-50 rounded-xl text-[10px] font-black transition-colors flex items-center justify-center gap-1"
+                            >
+                              <X size={12} /> إلغاء طلب الخروج
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

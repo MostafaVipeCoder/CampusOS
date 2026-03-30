@@ -81,7 +81,33 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
         .order('created_at', { ascending: false });
 
       if (errSessions) throw errSessions;
-      setSessions(sessionsData as Session[]);
+      
+      const sorted = (sessionsData as any[]).sort((a, b) => {
+        // Updated Priority based on user request: who "payed already" (completed) at the top
+        // Priority: completed (0) > checkout_requested (1) > active (2)
+        const getPriority = (status: string) => {
+          if (status === 'completed') return 0;
+          if (status === 'checkout_requested') return 1;
+          if (status === 'active') return 2;
+          return 3;
+        };
+        
+        const pA = getPriority(a.status);
+        const pB = getPriority(b.status);
+        
+        if (pA !== pB) return pA - pB;
+        
+        // Secondary sort within groups
+        // For completed, use end_time to show who just finished at the top of their section
+        if (a.status === 'completed') {
+          return new Date(b.end_time || b.created_at).getTime() - new Date(a.end_time || a.created_at).getTime();
+        }
+        
+        // For others, use created_at (start time)
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+
+      setSessions(sorted);
 
       // 2. Fetch Subscriptions today
       const { data: subsData } = await (supabase as any)
@@ -139,6 +165,20 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
       fetchTodayLog();
     } catch (err: any) {
       alert('خطأ في التحديث: ' + err.message);
+    }
+  };
+
+  const handleCancelCheckoutRequest = async (sessionId: string) => {
+    try {
+      const { error } = await (supabase as any)
+        .from('workspace_sessions')
+        .update({ status: 'active' })
+        .eq('id', sessionId);
+
+      if (error) throw error;
+      fetchTodayLog();
+    } catch (err: any) {
+      alert('خطأ في إلغاء طلب الخروج: ' + err.message);
     }
   };
 
@@ -305,6 +345,15 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                   </td>
                   <td className="px-6 py-4 text-center">
                     <div className="flex items-center justify-center gap-2">
+                       {session.status === 'checkout_requested' && (
+                         <button 
+                           onClick={() => handleCancelCheckoutRequest(session.id)}
+                           title="إلغاء طلب الحساب"
+                           className="p-2 text-amber-500 hover:text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-xl transition-all"
+                         >
+                           <X size={16} />
+                         </button>
+                       )}
                        <button 
                          onClick={() => {
                            setEditingSession(session);
