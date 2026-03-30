@@ -374,30 +374,23 @@ export const WorkspaceLogin = () => {
     try {
       // Normalize phone number for lookup
       const cleanPhone = phoneNumber.replace(/\s+/g, '').replace(/^(\+20|0)/, '');
+      const cleanCode = userCode.trim().toUpperCase();
 
-      // Find the customer
-      const { data: customerData, error: customerError } = await supabase
-        .from('customers')
-        .select('id, full_name, code, phone')
-        .eq('code', userCode.trim().toUpperCase())
-        .ilike('phone', `%${cleanPhone}`)
-        .maybeSingle();
-
-      if (customerError || !customerData) {
-        throw new Error('بيانات المستخدم غير صحيحة، تأكد من كود العميل ورقم الهاتف.');
-      }
-
-      // Check for active sessions for this customer
-      const { data: existingSessions, error: existingError } = await supabase
+      // 1. Direct session lookup (to "find session and time" as requested)
+      // This works for both registered customers and visitors (NA codes)
+      const { data: existingSess, error: directError } = await supabase
         .from('workspace_sessions')
         .select('*, customers(full_name)')
-        .eq('customer_id', customerData.id)
+        .eq('user_code', cleanCode)
+        .ilike('phone_number', `%${cleanPhone}`)
         .in('status', ['active', 'checkout_requested'])
         .maybeSingle();
 
-      if (existingSessions) {
-        const sess = existingSessions as any;
-        // Essential: If the existing session has no branch_id, attach it to our branch now
+      if (existingSess) {
+        localStorage.setItem('workspace_session_id', existingSess.id);
+        
+        // Ensure branch context for consistency
+        const sess = existingSess as any;
         if (!sess.branch_id && branchId) {
             await (supabase as any)
                 .from('workspace_sessions')
@@ -405,30 +398,46 @@ export const WorkspaceLogin = () => {
                 .eq('id', sess.id);
             sess.branch_id = branchId;
         }
-        localStorage.setItem('workspace_session_id', sess.id);
+
         setSession(sess);
-      } else {
-        // Create new session
-        const newSession: any = {
-          customer_id: customerData.id,
-          user_code: customerData.code,
-          phone_number: customerData.phone,
-          start_time: new Date().toISOString(),
-          status: 'active',
-          branch_id: branchId // Associated with the selected branch
-        };
-
-        const { data: created, error: createError } = await (supabase as any)
-          .from('workspace_sessions')
-          .insert(newSession)
-          .select('*, customers(full_name)')
-          .single();
-
-        if (createError) throw createError;
-
-        localStorage.setItem('workspace_session_id', created.id);
-        setSession(created);
+        setLoading(false);
+        return;
       }
+
+      // 2. Traditional customer login (to start a NEW session)
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('id, full_name, code, phone')
+        .eq('code', cleanCode)
+        .ilike('phone', `%${cleanPhone}`)
+        .maybeSingle();
+
+      if (customerError || !customerData) {
+        throw new Error('بيانات المستخدم غير صحيحة، تأكد من كود العميل ورقم الهاتف.');
+      }
+
+      // At this point, we know the customer is valid but has no active session found in step 1
+      // Create new session
+      const newSession: any = {
+        customer_id: customerData.id,
+        user_code: customerData.code,
+        phone_number: customerData.phone,
+        start_time: new Date().toISOString(),
+        status: 'active',
+        branch_id: branchId // Associated with the selected branch
+      };
+
+      const { data: created, error: createError } = await (supabase as any)
+        .from('workspace_sessions')
+        .insert(newSession)
+        .select('*, customers(full_name)')
+        .single();
+
+      if (createError) throw createError;
+
+      localStorage.setItem('workspace_session_id', created.id);
+      setSession(created);
+      
     } catch (err: any) {
       setError(err.message || 'حدث خطأ، حاول مرة أخرى.');
     } finally {
