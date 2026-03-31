@@ -28,6 +28,7 @@ const DashboardLayout = () => {
   const [branches, setBranches] = useState<Campus[]>([]);
   const [currentCampus, setCampus] = useState<Campus | null>(null);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -72,8 +73,13 @@ const DashboardLayout = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-transparent font-['Cairo'] text-slate-800 antialiased selection:bg-indigo-500 selection:text-white">
-      <Sidebar isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
+    <div className="flex min-h-screen bg-transparent font-['Cairo'] text-slate-800 antialiased selection:bg-indigo-500 selection:text-white overflow-x-hidden">
+      <Sidebar 
+        isOpen={isSidebarOpen} 
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!isSidebarCollapsed)}
+        onClose={() => setSidebarOpen(false)} 
+      />
       
       <div className="fixed bottom-10 right-10 lg:hidden z-[60]">
         <button 
@@ -88,7 +94,11 @@ const DashboardLayout = () => {
         </button>
       </div>
 
-      <main className={`flex-1 relative min-h-screen transition-all duration-500 pb-24 lg:pb-0 ${isSidebarOpen ? 'lg:mr-64 blur-sm lg:blur-none pointer-events-none lg:pointer-events-auto' : 'lg:mr-64 mr-0'}`}>
+      <main className={`flex-1 relative min-h-screen transition-all duration-500 pb-24 lg:pb-0 ${
+        isSidebarOpen 
+          ? 'lg:mr-64 blur-sm lg:blur-none pointer-events-none lg:pointer-events-auto' 
+          : isSidebarCollapsed ? 'lg:mr-20 mr-0' : 'lg:mr-64 mr-0'
+      }`}>
         <div className="absolute top-0 right-0 w-full h-[500px] bg-gradient-to-b from-indigo-50/50 to-transparent -z-10 pointer-events-none" />
         
         <div className={`responsive-container text-right animate-fade-in-up ${location.pathname.includes('/finance') ? 'p-10 md:p-14' : 'px-6 py-10 md:px-10 md:py-16'}`}>

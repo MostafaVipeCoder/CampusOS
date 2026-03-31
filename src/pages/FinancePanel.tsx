@@ -8,7 +8,7 @@ import {
   ChevronUp, ChevronDown, Lock, Edit, Trash2
 } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
-import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input } from '../components/ui';
+import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input, Modal } from '../components/ui';
 import { supabase } from '../lib/supabase';
 
 export const FinancePanel = ({ branchId }: { branchId?: string }) => {
@@ -1067,52 +1067,43 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
 
 
       {/* Summary Field Editor Modal */}
-      {activeSummaryEdit && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl z-[150] flex items-center justify-center p-6 animate-in fade-in duration-500">
-          <Card className="w-full max-w-sm border-none shadow-[0_40px_160px_-20px_rgba(0,0,0,0.5)] bg-white rounded-[3rem] overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between pb-6">
-              <div className="flex items-center gap-3">
-                <div className={`p-3 rounded-2xl ${activeSummaryEdit.color.replace('text-', 'bg-').replace('-600', '-50')} ${activeSummaryEdit.color}`}>
-                  <activeSummaryEdit.icon size={24} />
-                </div>
-                <CardTitle className="font-black text-xl">تعديل {activeSummaryEdit.label}</CardTitle>
-              </div>
-              <button onClick={() => setActiveSummaryEdit(null)} className="p-2 text-slate-400 hover:text-slate-900"><X size={20} /></button>
-            </CardHeader>
-            <CardContent className="space-y-8 pb-10">
-              <div className="space-y-4">
-                <div className="p-4 bg-slate-50 rounded-2xl">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                    {['cash_athar', 'safe_balance'].includes(activeSummaryEdit.key) ? 'المبلغ المودع حالياً' : 'الرصيد السابق (يدوي)'}
-                  </p>
-                  <Input
-                    type="number"
-                    value={summaryEditValue}
-                    onChange={(e) => setSummaryEditValue(e.target.value)}
-                    className="text-4xl font-black h-20 text-center border-none bg-transparent"
-                    autoFocus
-                  />
-                  <p className="text-[10px] text-center font-bold text-slate-400 mt-2">
-                    {['cash_athar', 'safe_balance'].includes(activeSummaryEdit.key) 
-                      ? 'سيتم حفظ هذا الرقم كقيمة أساسية لهذه الخانة' 
-                      : 'سيتم إضافة هذا الرقم كعجز أو زيادة سابقة لهذه الخانة'}
-                  </p>
-                </div>
-              </div>
+      <Modal
+        isOpen={!!activeSummaryEdit}
+        onClose={() => setActiveSummaryEdit(null)}
+        title={activeSummaryEdit ? `تعديل ${activeSummaryEdit.label}` : ""}
+      >
+        <div className="space-y-8 pb-4">
+          <div className="space-y-4">
+            <div className="p-6 bg-slate-50/50 border border-slate-100 rounded-3xl">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">
+                {activeSummaryEdit && ['cash_athar', 'safe_balance'].includes(activeSummaryEdit.key) ? 'المبلغ المودع حالياً' : 'الرصيد السابق (يدوي)'}
+              </p>
+              <Input
+                type="number"
+                value={summaryEditValue}
+                onChange={(e) => setSummaryEditValue(e.target.value)}
+                className="text-4xl font-black h-20 text-center border-none bg-transparent focus:ring-0"
+                autoFocus
+              />
+              <p className="text-[10px] text-center font-bold text-slate-400 mt-4 leading-relaxed px-4">
+                {activeSummaryEdit && ['cash_athar', 'safe_balance'].includes(activeSummaryEdit.key) 
+                  ? 'سيتم حفظ هذا الرقم كقيمة أساسية لهذه الخانة' 
+                  : 'سيتم إضافة هذا الرقم كعجز أو زيادة سابقة لهذه الخانة'}
+              </p>
+            </div>
+          </div>
 
-              <div className="flex gap-3">
-                <Button onClick={() => setActiveSummaryEdit(null)} variant="ghost" className="flex-1 h-16 rounded-2xl font-black text-slate-400">إلغاء</Button>
-                <Button 
-                  onClick={() => saveFinanceSummaryOffset(activeSummaryEdit.key, parseFloat(summaryEditValue) || 0)} 
-                  className={`flex-[2] h-16 rounded-2xl text-white font-black text-lg shadow-xl ${activeSummaryEdit.color.replace('text-', 'bg-')}`}
-                >
-                  حفظ التعديل
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex gap-3">
+            <Button onClick={() => setActiveSummaryEdit(null)} variant="ghost" className="flex-1 h-16 rounded-2xl font-black text-slate-400">إلغاء</Button>
+            <Button 
+              onClick={() => activeSummaryEdit && saveFinanceSummaryOffset(activeSummaryEdit.key, parseFloat(summaryEditValue) || 0)} 
+              className={`flex-[2] h-16 rounded-2xl text-white font-black text-lg shadow-xl ${activeSummaryEdit?.color.replace('text-', 'bg-')}`}
+            >
+              حفظ التعديل
+            </Button>
+          </div>
         </div>
-      )}
+      </Modal>
 
       {/* View Tabs */}
       <div className="bg-white/80 p-4 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-wrap justify-between items-center gap-6 sticky top-20 md:top-24 z-40 backdrop-blur-md transition-all duration-300">
@@ -1158,235 +1149,194 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
       {activeTab === 'daily' ? renderDaily() : activeTab === 'monthly' ? renderMonthly() : renderAnnual()}
 
       {/* Petty Cash Modal - Enhanced Design */}
-      {showPettyModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-6 animate-in fade-in duration-500">
-          <Card className="w-full max-w-md border border-white/40 shadow-[0_32px_120px_-20px_rgba(0,0,0,0.3)] bg-white/90 backdrop-blur-2xl rounded-[3rem] overflow-hidden animate-in zoom-in-95 duration-300 relative">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-500/10 rounded-full blur-[60px] -z-0" />
-            <div className="absolute bottom-0 left-0 w-32 h-32 bg-violet-500/10 rounded-full blur-[50px] -z-0" />
-            
-            <CardHeader className="flex flex-row items-center justify-between pb-4 relative z-10">
-              <div className="flex items-center gap-3">
-                <div className={`p-3 rounded-2xl ${showPettyModal === 'add' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'} shadow-sm`}>
-                  <Wallet size={24} />
-                </div>
-                <CardTitle className="font-black text-2xl tracking-tight">
-                  {showPettyModal === 'add' ? 'إضافة عهدة' : 'سحب عهدة'}
-                </CardTitle>
-              </div>
-              <button 
-                onClick={() => setShowPettyModal(null)} 
-                className="p-3 hover:bg-slate-100/80 rounded-2xl transition-all hover:rotate-90 text-slate-400 group"
-              >
-                <X size={20} className="group-hover:text-slate-900" />
-              </button>
-            </CardHeader>
+      <Modal
+        isOpen={!!showPettyModal}
+        onClose={() => setShowPettyModal(null)}
+        title={showPettyModal === 'add' ? 'إضافة عهدة' : 'سحب عهدة'}
+      >
+        <div className="space-y-8 pb-4 relative z-10">
+          <div className="space-y-3">
+            <div className="flex justify-between items-center px-2">
+               <label className="text-xs font-black text-slate-500 uppercase tracking-widest">المبلغ المطلوب (ج.م)</label>
+               <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-full text-slate-400 font-bold">EGP Currency</span>
+            </div>
+            <div className="relative group">
+              <Input
+                type="number"
+                autoFocus
+                value={pettyActionValue}
+                onChange={(e) => setPettyActionValue(e.target.value)}
+                placeholder="0.00"
+                className="text-4xl font-black h-20 text-center border-2 border-slate-100 focus:border-indigo-500 rounded-[2rem] bg-slate-50/50 shadow-inner group-hover:border-slate-200 transition-all"
+              />
+            </div>
+          </div>
 
-            <CardContent className="space-y-8 pb-10 relative z-10">
-              <div className="space-y-3">
-                <div className="flex justify-between items-center px-2">
-                   <label className="text-xs font-black text-slate-500 uppercase tracking-widest">المبلغ المطلوب (ج.م)</label>
-                   <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-full text-slate-400 font-bold">EGP Currency</span>
-                </div>
-                <div className="relative group">
-                  <Input
-                    type="number"
-                    autoFocus
-                    value={pettyActionValue}
-                    onChange={(e) => setPettyActionValue(e.target.value)}
-                    placeholder="0.00"
-                    className="text-4xl font-black h-20 text-center border-2 border-slate-100 focus:border-indigo-500 rounded-[2rem] bg-slate-50/50 shadow-inner group-hover:border-slate-200 transition-all"
-                  />
-                </div>
-              </div>
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-500 mr-2 uppercase tracking-widest">بيان الملاحظات</label>
+            <Input
+              value={pettyNote}
+              onChange={(e) => setPettyNote(e.target.value)}
+              placeholder="مثلاً: مشتريات بوفيه، عهدة تشغيل..."
+              className="h-14 font-bold border-2 border-slate-100 focus:border-indigo-500 rounded-2xl bg-white/80"
+            />
+          </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-black text-slate-500 mr-2 uppercase tracking-widest">بيان الملاحظات</label>
-                <Input
-                  value={pettyNote}
-                  onChange={(e) => setPettyNote(e.target.value)}
-                  placeholder="مثلاً: مشتريات بوفيه، عهدة تشغيل..."
-                  className="h-14 font-bold border-2 border-slate-100 focus:border-indigo-500 rounded-2xl bg-white/80"
-                />
-              </div>
+          <div className="p-5 bg-gradient-to-br from-slate-50 to-white rounded-3xl border border-slate-100 shadow-sm">
+            <p className="text-xs font-bold text-slate-500 leading-relaxed flex items-start gap-2 text-right">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1 shrink-0" />
+              {showPettyModal === 'add' 
+                ? 'سيتم تسجيل هذه حركة كدخل إضافي مباشر للخزينة تحت بند العهدة.' 
+                : 'سيتم تسجيل هذه حركة كمصروفات فورية من رصيد الخزينة الحالي.'}
+            </p>
+          </div>
 
-              <div className="p-5 bg-gradient-to-br from-slate-50 to-white rounded-3xl border border-slate-100 shadow-sm">
-                <p className="text-xs font-bold text-slate-500 leading-relaxed flex items-start gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1 pointer-events-none" />
-                  {showPettyModal === 'add' 
-                    ? 'سيتم تسجيل هذه الحركة كدخل إضافي مباشر للخزينة تحت بند العهدة.' 
-                    : 'سيتم تسجيل هذه الحركة كمصروفات فورية من رصيد الخزينة الحالي.'}
-                </p>
-              </div>
-
-              <Button 
-                onClick={handlePettyAction} 
-                className={`w-full h-16 rounded-3xl text-white font-black text-xl shadow-xl transition-all active:scale-95 ${showPettyModal === 'add' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-200' : 'bg-slate-900 hover:bg-slate-800 shadow-slate-200'}`}
-              >
-                تنفيذ العملية الآن
-              </Button>
-            </CardContent>
-          </Card>
+          <Button 
+            onClick={handlePettyAction} 
+            className={`w-full h-16 rounded-3xl text-white font-black text-xl shadow-xl transition-all active:scale-95 ${showPettyModal === 'add' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-200' : 'bg-slate-900 hover:bg-slate-800 shadow-slate-200'}`}
+          >
+            تنفيذ العملية الآن
+          </Button>
         </div>
-      )}
+      </Modal>
 
       {/* Edit Petty Modal */}
-      {editingPetty && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-6 animate-in fade-in duration-500">
-          <Card className="w-full max-w-md border border-white/40 shadow-2xl bg-white/90 backdrop-blur-2xl rounded-[3rem] overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between pb-4">
-              <div className="flex items-center gap-3">
-                <div className={`p-3 rounded-2xl ${editingPetty.type === 'add' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-                  <Edit size={24} />
-                </div>
-                <CardTitle className="font-black text-2xl">تعديل حركة عهدة</CardTitle>
-              </div>
-              <button onClick={() => setEditingPetty(null)} className="p-3 text-slate-400 hover:text-slate-900 transition-all"><X size={20} /></button>
-            </CardHeader>
-            <CardContent className="space-y-8 pb-10">
-              <div className="space-y-3">
-                <label className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">المبلغ الجديد</label>
-                <Input
-                  type="number"
-                  value={pettyActionValue}
-                  onChange={(e) => setPettyActionValue(e.target.value)}
-                  className="text-4xl font-black h-20 text-center border-2 border-slate-100 rounded-[2rem] bg-slate-50/50"
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">ملاحظات التعديل</label>
-                <Input
-                  value={pettyNote}
-                  onChange={(e) => setPettyNote(e.target.value)}
-                  className="h-14 font-bold border-2 border-slate-100 rounded-2xl"
-                />
-              </div>
-              <Button 
-                onClick={handleUpdatePetty} 
-                className={`w-full h-16 rounded-3xl text-white font-black text-xl shadow-xl ${editingPetty.type === 'add' ? 'bg-emerald-600 shadow-emerald-200' : 'bg-slate-900 shadow-slate-200'}`}
-              >
-                حفظ التعديلات المحدثة
-              </Button>
-            </CardContent>
-          </Card>
+      <Modal
+        isOpen={!!editingPetty}
+        onClose={() => setEditingPetty(null)}
+        title="تعديل حركة عهدة"
+      >
+        <div className="space-y-8 pb-4">
+          <div className="space-y-3">
+            <label className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">المبلغ الجديد</label>
+            <Input
+              type="number"
+              value={pettyActionValue}
+              onChange={(e) => setPettyActionValue(e.target.value)}
+              className="text-4xl font-black h-20 text-center border-2 border-slate-100 rounded-[2rem] bg-slate-50/50"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">ملاحظات التعديل</label>
+            <Input
+              value={pettyNote}
+              onChange={(e) => setPettyNote(e.target.value)}
+              className="h-14 font-bold border-2 border-slate-100 rounded-2xl"
+            />
+          </div>
+          <Button 
+            onClick={handleUpdatePetty} 
+            className={`w-full h-16 rounded-3xl text-white font-black text-xl shadow-xl ${editingPetty?.type === 'add' ? 'bg-emerald-600 shadow-emerald-200' : 'bg-slate-900 shadow-slate-200'}`}
+          >
+            حفظ التعديلات المحدثة
+          </Button>
         </div>
-      )}
+      </Modal>
 
       {/* Edit Daily Log Modal */}
-      {editingDailyLog && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6 animate-in fade-in duration-500">
-          <Card className="w-full max-w-md border border-white/40 shadow-2xl bg-white rounded-[3rem] overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600">
-                  <Edit size={24} />
-                </div>
-                <CardTitle className="font-black text-2xl">تعديل سجل يوم {editingDailyLog.date}</CardTitle>
-              </div>
-              <button onClick={() => setEditingDailyLog(null)} className="p-3 text-slate-400 hover:text-slate-900 transition-all"><X size={20} /></button>
-            </CardHeader>
-            <CardContent className="space-y-8 pb-10">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">إجمالي الدخل</label>
-                  <Input
-                    type="number"
-                    value={editDailyIncome}
-                    onChange={(e) => setEditDailyIncome(e.target.value)}
-                    className="text-2xl font-black h-16 text-center border-2 border-slate-100 rounded-2xl bg-slate-50/50"
-                  />
-                </div>
-                <div className="space-y-3">
-                  <label className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">إجمالي المصروفات</label>
-                  <Input
-                    type="number"
-                    value={editDailyExpense}
-                    onChange={(e) => setEditDailyExpense(e.target.value)}
-                    className="text-2xl font-black h-16 text-center border-2 border-slate-100 rounded-2xl bg-slate-50/50"
-                  />
-                </div>
-              </div>
-              <div className="p-6 bg-slate-900 rounded-2xl text-white text-center">
-                <p className="text-xs font-bold opacity-60 mb-1">الرصيد الفعلي المسجل</p>
-                <p className="text-3xl font-black">{(editingDailyLog.actual_cash || 0).toLocaleString()} ج.م</p>
-              </div>
-              <Button 
-                onClick={handleUpdateDailyLog} 
-                className="w-full h-16 rounded-3xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xl shadow-xl shadow-indigo-100 transition-all active:scale-95"
-              >
-                حفظ التعديلات المحدثة
-              </Button>
-            </CardContent>
-          </Card>
+      <Modal
+        isOpen={!!editingDailyLog}
+        onClose={() => setEditingDailyLog(null)}
+        title={editingDailyLog ? `تعديل سجل يوم ${editingDailyLog.date}` : ""}
+      >
+        <div className="space-y-8 pb-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-3">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">إجمالي الدخل</label>
+              <Input
+                type="number"
+                value={editDailyIncome}
+                onChange={(e) => setEditDailyIncome(e.target.value)}
+                className="text-2xl font-black h-16 text-center border-2 border-slate-100 rounded-2xl bg-slate-50/50"
+              />
+            </div>
+            <div className="space-y-3">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">إجمالي المصروفات</label>
+              <Input
+                type="number"
+                value={editDailyExpense}
+                onChange={(e) => setEditDailyExpense(e.target.value)}
+                className="text-2xl font-black h-16 text-center border-2 border-slate-100 rounded-2xl bg-slate-50/50"
+              />
+            </div>
+          </div>
+          <div className="p-6 bg-slate-900 rounded-3xl text-white text-center shadow-2xl">
+            <p className="text-[10px] font-black opacity-40 uppercase tracking-[0.2em] mb-2">الرصيد الفعلي المسجل</p>
+            <p className="text-3xl font-black">{editingDailyLog?.actual_cash?.toLocaleString()} <span className="text-sm opacity-40">ج.م</span></p>
+          </div>
+          <Button 
+            onClick={handleUpdateDailyLog} 
+            className="w-full h-16 rounded-3xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xl shadow-xl shadow-indigo-100 transition-all active:scale-95"
+          >
+            حفظ التعديلات المحدثة
+          </Button>
         </div>
-      )}
+      </Modal>
 
       {/* Month Closing Modal - Enhanced Design */}
-      {showCloseMonthModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl z-[110] flex items-center justify-center p-6 animate-in fade-in duration-500">
-          <Card className="w-full max-w-lg border border-white/40 shadow-[0_40px_160px_-20px_rgba(0,0,0,0.5)] bg-white/95 backdrop-blur-2xl rounded-[3.5rem] overflow-hidden animate-in slide-in-from-bottom-8 duration-500 relative">
-            <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-indigo-500/10 to-transparent pointer-events-none" />
-            
-            <div className="p-10 pt-12 text-center space-y-8 relative z-10">
-              <div className="relative mx-auto w-24 h-24 group">
-                <div className="absolute inset-0 bg-indigo-500 rounded-full blur-[20px] opacity-20 group-hover:opacity-40 transition-opacity" />
-                <div className="relative w-full h-full bg-white border-8 border-indigo-50 text-indigo-600 rounded-full flex items-center justify-center shadow-xl">
-                  <Lock size={40} className="stroke-[2.5]" />
-                </div>
-              </div>
-
-              <div>
-                <CardTitle className="text-3xl font-black mb-3 tracking-tight">تقفيل الشهر المالي</CardTitle>
-                <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-sm font-black ring-1 ring-indigo-200/50">
-                  <Calendar size={14} />
-                  {viewDate.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}
-                </div>
-              </div>
-
-              <p className="text-slate-500 font-bold leading-relaxed px-6 text-lg">
-                سيتم ترحيل كافة العمليات المالية لهذا الشهر إلى سجلات الأرشيف السنوية. يرجى تحديد مصير الرصيد المتبقي:
-              </p>
-
-              <div className="grid grid-cols-2 gap-5">
-                {[
-                  { id: 'rollover', label: 'ترحيل لشهر القادم', icon: ArrowRightLeft, desc: 'يتم تدوير المبلغ كبداية لشهر الجديد' },
-                  { id: 'settle', label: 'تسوية وتصفير', icon: CheckCircle2, desc: 'تصفير العهدة وتوريدها للبنك أو الخزنة' }
-                ].map((option) => (
-                  <button
-                    key={option.id}
-                    onClick={() => setRolloverOption(option.id as any)}
-                    className={`p-6 rounded-[2.5rem] border-2 transition-all duration-300 flex flex-col items-center text-center gap-3 group relative overflow-hidden ${rolloverOption === option.id ? 'border-indigo-600 bg-indigo-50/50 shadow-inner' : 'border-slate-100 hover:border-slate-200 bg-white'}`}
-                  >
-                    <div className={`p-4 rounded-2xl transition-all duration-300 ${rolloverOption === option.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 group-hover:bg-slate-100'}`}>
-                      <option.icon size={28} />
-                    </div>
-                    <div>
-                      <span className={`block font-black text-[15px] mb-1 ${rolloverOption === option.id ? 'text-indigo-900' : 'text-slate-700'}`}>{option.label}</span>
-                      <span className="text-[10px] font-bold text-slate-400 leading-tight block px-2">{option.desc}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex gap-4 pt-6">
-                <Button 
-                  onClick={() => setShowCloseMonthModal(false)} 
-                  variant="ghost" 
-                  className="flex-1 h-16 rounded-3xl font-black text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all active:scale-95"
-                >
-                  إلغاء
-                </Button>
-                <Button 
-                  onClick={handleCloseMonth} 
-                  className="flex-[2] h-16 rounded-3xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xl shadow-xl shadow-indigo-100 active:scale-95 transition-all flex items-center justify-center gap-3"
-                >
-                  إقفال الشهر الآن <ChevronRight size={24} />
-                </Button>
-              </div>
+      <Modal
+        isOpen={showCloseMonthModal}
+        onClose={() => setShowCloseMonthModal(false)}
+        title="تقفيل الشهر المالي"
+      >
+        <div className="p-2 pt-4 text-center space-y-8 relative z-10">
+          <div className="relative mx-auto w-24 h-24 group">
+            <div className="absolute inset-0 bg-indigo-500 rounded-full blur-[20px] opacity-20 group-hover:opacity-40 transition-opacity" />
+            <div className="relative w-full h-full bg-white border-8 border-indigo-50 text-indigo-600 rounded-full flex items-center justify-center shadow-xl">
+              <Lock size={40} className="stroke-[2.5]" />
             </div>
-          </Card>
+          </div>
+
+          <div>
+            <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-600 px-6 py-2 rounded-full text-sm font-black ring-1 ring-indigo-200/50">
+              <Calendar size={14} />
+              {viewDate.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}
+            </div>
+          </div>
+
+          <p className="text-slate-500 font-bold leading-relaxed px-4 text-lg">
+            سيتم ترحيل كافة العمليات المالية لهذا الشهر إلى سجلات الأرشيف السنوية. يرجى تحديد مصير الرصيد المتبقي:
+          </p>
+
+          <div className="grid grid-cols-2 gap-5">
+            {[
+              { id: 'rollover', label: 'ترحيل لشهر القادم', icon: ArrowRightLeft, desc: 'يتم تدوير المبلغ كبداية لشهر الجديد' },
+              { id: 'settle', label: 'تسوية وتصفير', icon: CheckCircle2, desc: 'تصفير العهدة وتوريدها للبنك أو الخزنة' }
+            ].map((option) => (
+              <button
+                key={option.id}
+                onClick={() => setRolloverOption(option.id as any)}
+                className={`p-6 rounded-[2.5rem] border-2 transition-all duration-300 flex flex-col items-center text-center gap-3 group relative overflow-hidden ${rolloverOption === option.id ? 'border-indigo-600 bg-indigo-50/50 shadow-inner' : 'border-slate-100 hover:border-slate-200 bg-white'}`}
+              >
+                <div className={`p-4 rounded-2xl transition-all duration-300 ${rolloverOption === option.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 group-hover:bg-slate-100'}`}>
+                  <option.icon size={28} />
+                </div>
+                <div>
+                  <span className={`block font-black text-[15px] mb-1 ${rolloverOption === option.id ? 'text-indigo-900' : 'text-slate-700'}`}>{option.label}</span>
+                  <span className="text-[10px] font-bold text-slate-400 leading-tight block px-2">{option.desc}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-4 pt-6">
+            <Button 
+              onClick={() => setShowCloseMonthModal(false)} 
+              variant="ghost" 
+              className="flex-1 h-16 rounded-3xl font-black text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all active:scale-95"
+            >
+              إلغاء
+            </Button>
+            <Button 
+              onClick={handleCloseMonth} 
+              className="flex-[2] h-16 rounded-3xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-lg shadow-xl shadow-indigo-100 active:scale-95 transition-all flex items-center justify-center gap-3"
+            >
+              إقفال الشهر الآن <ChevronRight size={24} />
+            </Button>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

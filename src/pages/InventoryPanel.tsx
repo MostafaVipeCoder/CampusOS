@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Package, Search, Filter, TrendingUp, AlertTriangle, ArrowDown, ArrowUp, RefreshCcw, Coffee, Printer, Trash2, Plus, X, Edit, Save, Image as ImageIcon } from 'lucide-react';
-import { Button, Card, CardHeader, CardTitle, CardContent, Badge, Input } from '../components/ui';
+import { Button, Card, CardHeader, CardTitle, CardContent, Badge, Input, Modal } from '../components/ui';
 import { supabase } from '../lib/supabase';
 
 export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
@@ -420,9 +420,9 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
                 </button>
             </div>
 
-            {isAddModalOpen && (
-                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <Card className="w-full max-w-md bg-white rounded-[2.5rem] p-8 animate-in zoom-in-95 duration-200">
+            <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)}>
+                {newItem && (
+                <Card className="w-full bg-white rounded-[3rem] border-none shadow-none p-8">
                         <div className="flex justify-between items-center mb-6">
                             <h2 className="text-xl font-black text-slate-900">إضافة صنف جديد</h2>
                             <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600">
@@ -605,12 +605,12 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
                             </button>
                         </form>
                     </Card>
-                </div>
-            )}
+                )}
+                </Modal>
 
-            {isEditModalOpen && editingItem && (
-                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <Card className="w-full max-w-md bg-white rounded-[2.5rem] p-8 animate-in zoom-in-95 duration-200">
+            <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)}>
+                {editingItem && (
+                <Card className="w-full bg-white rounded-[3rem] border-none shadow-none p-8">
                         <div className="flex justify-between items-center mb-6">
                             <div>
                                 <h2 className="text-xl font-black text-slate-900">إحصائيات وإدارة الصنف</h2>
@@ -827,8 +827,8 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
                             </button>
                         </form>
                     </Card>
-                </div>
-            )}
+                )}
+            </Modal>
 
             <Card className="border-none shadow-sm rounded-[2.5rem] overflow-hidden bg-white">
                 <table className="w-full text-right">

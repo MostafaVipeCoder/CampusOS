@@ -89,3 +89,63 @@ export const Badge = ({ className, variant = 'default', ...props }: React.HTMLAt
     <div className={cn('inline-flex items-center rounded-full border px-3 py-0.5 text-[10px] font-black transition-colors', variants[variant], className)} {...props} />
   );
 };
+
+import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
+
+interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  title?: string;
+  className?: string;
+}
+
+export const Modal = ({ isOpen, onClose, children, title, className }: ModalProps) => {
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300" 
+        onClick={onClose}
+      />
+      
+      {/* Modal Content Wrapper */}
+      <div className={cn(
+        "relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-white rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 fade-in duration-300 border border-white/20",
+        className
+      )}>
+        {/* Header */}
+        <div className="flex items-center justify-between p-8 pb-4">
+          {title && <h3 className="text-2xl font-black text-slate-800 tracking-tight">{title}</h3>}
+          <button 
+            onClick={onClose}
+            className="p-3 text-slate-400 hover:text-slate-900 hover:bg-slate-50 rounded-2xl transition-all group"
+          >
+            <X size={24} className="group-hover:rotate-90 transition-transform duration-300" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-8 pb-8 custom-scrollbar">
+          {children}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};

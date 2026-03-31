@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, LogOut, CheckCircle2, Coffee, ShoppingBag, Info, HelpCircle, User, Sparkles, CalendarDays, ChevronLeft, Receipt, X, Search, Package, RefreshCw, Plus, Cookie, Zap, Lock, Wind, PenTool, LayoutGrid, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { Button, Modal } from '../components/ui';
 
 // UI tabs options
 type activeTabType = 'session' | 'catering' | 'about' | 'how_work';
@@ -75,16 +76,22 @@ export const WorkspaceLogin = () => {
         }
     };
     fetchBranches();
+    fetchStoreItems();
   }, [branchId]);
 
   const fetchStoreItems = async () => {
     try {
       // Direct fetch from inventory favoring selling_price > 0
-      const { data, error } = await supabase
+      let query = supabase
         .from('inventory')
         .select('*')
-        .gt('selling_price', 0)
-        .order('name');
+        .gt('selling_price', 0);
+      
+      if (branchId) {
+        query = query.eq('branch_id', branchId);
+      }
+
+      const { data, error } = await query.order('name');
       
       if (error) throw error;
       setCateringItems(data || []);
@@ -725,7 +732,7 @@ export const WorkspaceLogin = () => {
           {activeTab === 'catering' && (
             <div className="w-full max-w-lg mx-auto space-y-6 animate-in fade-in duration-500 pb-20">
                 <div className="text-center space-y-2 mb-8">
-                  <h2 className="text-3xl font-black text-white tracking-tight">متجر سحابة</h2>
+                  <h2 className="text-3xl font-black text-white tracking-tight"> Cloud Store </h2>
                   <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Cloud Store & Catering</p>
                 </div>
                 
@@ -846,30 +853,36 @@ export const WorkspaceLogin = () => {
                               <div className={`absolute inset-0 rounded-[2.5rem] bg-gradient-to-br transition-all duration-500 blur-xl opacity-0 group-hover/card:opacity-30 ${typeGlow}`} />
                               <div className="bg-[#0B0F19]/80 backdrop-blur-3xl border border-white/5 hover:border-white/10 rounded-[2.5rem] flex flex-col relative overflow-hidden h-full shadow-2xl transition-all duration-300 hover:-translate-y-1">
                                  {/* Product Image Section - Enhanced Cropping & Premium Look */}
-                                 <div className="h-48 relative overflow-hidden group/img border-b border-white/5">
+                                 {/* Premium Product Image Container */}
+                                 <div className="aspect-[4/3] relative overflow-hidden group/img border-b border-white/5 bg-slate-900/40">
                                     {item.image_url && item.image_url.trim() !== '' ? (
                                       <img 
                                         src={item.image_url} 
                                         alt={item.name} 
-                                        className="w-full h-full object-cover object-center transition-transform duration-700 group-hover/card:scale-110" 
+                                        className="w-full h-full object-cover object-center transition-all duration-1000 ease-out group-hover/card:scale-110 group-hover/card:rotate-2" 
                                       />
                                     ) : (
-                                      <div className={`w-full h-full flex items-center justify-center bg-gradient-to-br ${typeGlow} opacity-30`}>
-                                         <Icon size={58} className="opacity-20 translate-y-2" />
+                                      <div className={`w-full h-full flex flex-col items-center justify-center bg-gradient-to-br ${typeGlow} opacity-30`}>
+                                         <Icon size={48} className="opacity-20 animate-pulse" />
+                                         <span className="text-[8px] font-black uppercase mt-3 tracking-[0.3em] opacity-20">NO IMAGE</span>
                                       </div>
                                     )}
-                                    <div className="absolute inset-0 bg-gradient-to-t from-[#0B0F19] via-transparent to-black/10 opacity-70" />
+                                    
+                                    {/* Glassmorphic Gradient Overlay */}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-[#0B0F19] via-transparent to-black/10 opacity-70 group-hover/card:opacity-40 transition-opacity duration-500" />
                                     
                                     {/* Premium Price Tag Overlay */}
-                                    <div className="absolute top-5 left-5 bg-indigo-600/80 backdrop-blur-xl border border-white/10 px-4 py-2 rounded-2xl shadow-[0_8px_32px_rgba(79,70,229,0.4)] transform -rotate-1 group-hover/card:rotate-0 transition-transform">
-                                       <div className="text-xl font-black text-white leading-none flex items-baseline gap-1">
-                                         {item.selling_price}
-                                         <span className="text-[10px] opacity-60 uppercase tracking-tighter">EGP</span>
+                                    <div className="absolute top-4 left-4 z-20">
+                                       <div className="bg-[#0B0F19]/80 backdrop-blur-xl border border-white/10 px-4 py-2 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] transform -rotate-2 group-hover/card:rotate-0 transition-all duration-500 hover:scale-110">
+                                          <div className="text-xl font-black text-white leading-none flex items-baseline gap-1">
+                                            {item.selling_price}
+                                            <span className="text-[10px] text-indigo-400 uppercase tracking-tighter">EGP</span>
+                                          </div>
                                        </div>
                                     </div>
  
                                     {isLowStock && (
-                                       <div className="absolute bottom-4 right-5 bg-rose-500/90 backdrop-blur-md text-white text-[9px] font-black px-3 py-1.5 rounded-xl animate-pulse border border-rose-400/30 uppercase tracking-[0.2em]">
+                                       <div className="absolute bottom-4 right-4 z-20 bg-rose-500/90 backdrop-blur-md text-white text-[9px] font-black px-3 py-1.5 rounded-xl animate-pulse border border-white/20 uppercase tracking-[0.2em] shadow-lg">
                                          رصيد محدود
                                        </div>
                                     )}
@@ -1362,60 +1375,65 @@ export const WorkspaceLogin = () => {
           </form>
         )}
       </div>
-      {finalBill && <FinalReceiptModal bill={finalBill} onClose={() => setFinalBill(null)} />}
+      {finalBill && (
+        <Modal
+          isOpen={!!finalBill}
+          onClose={() => setFinalBill(null)}
+          className="max-w-md p-0 overflow-hidden"
+        >
+          <FinalReceiptModal bill={finalBill} onClose={() => setFinalBill(null)} />
+        </Modal>
+      )}
+
       {/* Registration Success Modal */}
-      {showSuccessModal && regSuccessData && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0B0F19]/90 backdrop-blur-xl animate-in fade-in duration-500 p-4">
-          <div className="w-full max-w-sm bg-gradient-to-br from-[#1e75b9]/20 to-[#1ed788]/20 border border-white/10 rounded-[3rem] p-8 text-center relative overflow-hidden shadow-2xl animate-in zoom-in-95 duration-500">
-            {/* Background Orbs */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-[#1ed788]/20 rounded-full blur-3xl -mr-16 -mt-16" />
-            <div className="absolute bottom-0 left-0 w-32 h-32 bg-[#1e75b9]/20 rounded-full blur-3xl -ml-16 -mb-16" />
+      <Modal
+        isOpen={showSuccessModal && !!regSuccessData}
+        onClose={() => setShowSuccessModal(false)}
+        title="تم التسجيل بنجاح! 🎉"
+        className="max-w-sm text-center"
+      >
+        <div className="relative space-y-6 pb-2">
+          <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto ring-4 ring-emerald-500/10 scale-110 animate-pulse mb-8 mt-2">
+            <CheckCircle2 size={40} className="text-[#1ed788]" />
+          </div>
 
-            {/* Content */}
-            <div className="relative space-y-6">
-              <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto ring-4 ring-emerald-500/10 scale-110 animate-pulse">
-                <CheckCircle2 size={40} className="text-[#1ed788]" />
-              </div>
+          <div className="space-y-1">
+            <p className="text-slate-500 text-sm font-bold font-['Cairo']">
+              أهلاً بك <span className="text-indigo-600 font-black">{regSuccessData?.name}</span> في عائلة Campus
+            </p>
+          </div>
 
-              <div>
-                <h3 className="text-2xl font-black text-white mb-2 font-['Cairo']">تم التسجيل بنجاح! 🎉</h3>
-                <p className="text-slate-400 text-sm font-bold font-['Cairo'] px-4">
-                  أهلاً بك <span className="text-white">{regSuccessData.name}</span> في عائلة Campus
-                </p>
-              </div>
-
-              <div className="bg-[#0B0F19]/60 border border-white/10 rounded-[2rem] p-6 space-y-3 shadow-inner">
-                <p className="text-xs font-black text-[#1e75b9] uppercase tracking-widest">كود الدخول الخاص بك</p>
-                <div className="text-5xl font-black text-[#1ed788] font-mono tracking-tighter drop-shadow-[0_0_15px_rgba(30,215,136,0.3)]">
-                  {regSuccessData.code}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="bg-white/5 border border-white/5 py-3 px-4 rounded-2xl flex items-center gap-2 justify-center">
-                  <Info size={14} className="text-blue-400" />
-                  <p className="text-[10px] text-white/50 font-bold font-['Cairo'] leading-relaxed">
-                    يرجى أخذ لقطة شاشة (Screenshot) لهذا الكود لاستخدامه عند الحضور.
-                    {regSuccessData.email && <span className="block text-emerald-400 mt-1">تم إرسال نسخة لبريدك: {regSuccessData.email}</span>}
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => {
-                    setShowSuccessModal(false);
-                    // Force the user back to the login screen with the code pre-filled
-                    setUserCode(regSuccessData.code);
-                    setIsSignUp(false);
-                  }}
-                  className="w-full bg-white text-[#0B0F19] rounded-2xl py-4 font-black text-lg hover:bg-slate-100 transition-all active:scale-95 shadow-xl shadow-white/5"
-                >
-                  فهمت، ابدأ الآن
-                </button>
-              </div>
+          <div className="bg-slate-50 border border-slate-100 rounded-3xl p-6 space-y-3 shadow-inner">
+            <p className="text-[10px] font-black text-[#1e75b9] uppercase tracking-widest">كود الدخول الخاص بك</p>
+            <div className="text-5xl font-black text-slate-900 font-mono tracking-tighter">
+              {regSuccessData?.code}
             </div>
           </div>
+
+          <div className="space-y-6">
+            <div className="bg-indigo-50/50 border border-indigo-100/50 py-4 px-6 rounded-2xl flex items-center gap-4 text-right">
+              <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg shrink-0">
+                <Info size={18} />
+              </div>
+              <p className="text-[11px] text-slate-600 font-bold font-['Cairo'] leading-relaxed">
+                يرجى أخذ لقطة شاشة (Screenshot) لهذا الكود لاستخدامه عند الحضور.
+                {regSuccessData?.email && <span className="block text-emerald-600 mt-1">تم إرسال نسخة لبريدك: {regSuccessData.email}</span>}
+              </p>
+            </div>
+
+            <Button
+              onClick={() => {
+                setShowSuccessModal(false);
+                setUserCode(regSuccessData?.code || '');
+                setIsSignUp(false);
+              }}
+              className="w-full h-16 bg-slate-900 text-white rounded-2xl font-black text-lg transition-all active:scale-95 shadow-xl shadow-slate-200"
+            >
+              فهمت، ابدأ الآن
+            </Button>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };
@@ -1444,120 +1462,121 @@ const FinalReceiptModal = ({ bill, onClose }: { bill: any, onClose: () => void }
     }, [bill]);
 
     return (
-        <div className="fixed inset-0 bg-[#0B0F19]/95 backdrop-blur-3xl z-[500] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in transition-all">
-          <div className="bg-white rounded-t-[3.5rem] sm:rounded-[3.5rem] p-10 max-w-md w-full shadow-2xl animate-in slide-in-from-bottom-20 duration-500 overflow-hidden relative max-h-[95vh] overflow-y-auto custom-scrollbar">
-            {/* Header matching Admin Bill */}
-            <div className="flex justify-between items-center mb-10">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-100">
-                  <Receipt size={28} />
-                </div>
-                <div className="text-right">
-                  <h2 className="text-2xl font-black text-slate-900 leading-tight">فاتورة الزيارة</h2>
-                  <p className="text-indigo-600 text-[10px] font-black tracking-widest mt-1 uppercase">Session Summary</p>
-                </div>
+        <div className="space-y-8 text-right p-2">
+            {/* Header section moved to Modal title or rendered here if Modal title is empty */}
+            <div className="flex items-center gap-4 border-b border-slate-100 pb-8">
+              <div className="w-16 h-16 bg-slate-900 rounded-[1.5rem] flex items-center justify-center text-white shadow-2xl shadow-indigo-200">
+                <Receipt size={32} />
               </div>
-              <button 
-                onClick={onClose}
-                className="p-3 text-slate-400 hover:bg-slate-50 rounded-full transition-all"
-              >
-                <X size={24} />
-              </button>
+              <div className="text-right">
+                <h2 className="text-3xl font-black text-slate-900 leading-tight">فاتورة الزيارة</h2>
+                <p className="text-indigo-600 text-[10px] font-black tracking-widest mt-1 uppercase">Cloud Session Receipt</p>
+              </div>
             </div>
 
-            <div className="space-y-8 text-right">
-              <div className="bg-slate-50/80 rounded-[2.5rem] p-8 space-y-6 relative overflow-hidden border border-slate-100">
+            <div className="space-y-8">
+              <div className="bg-slate-50/50 rounded-[2.5rem] p-8 space-y-6 relative overflow-hidden border border-slate-100">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl -z-10" />
                 
                 {/* Client Info Section */}
                 <div className="border-b-2 border-dashed border-slate-200 pb-6 text-center">
                   <p className="text-slate-400 text-[10px] font-black mb-2 uppercase tracking-widest">مرحباً بك مجدداً</p>
-                  <p className="text-2xl font-black text-slate-900">{bill.customers?.full_name || 'زائر متميز'}</p>
-                  <p className="text-lg font-black text-indigo-600 bg-white inline-block px-4 py-1 rounded-xl shadow-sm border border-indigo-50 mt-3 font-mono">{bill.user_code}</p>
+                  <p className="text-3xl font-black text-slate-900">{bill.customers?.full_name || 'زائر متميز'}</p>
+                  <p className="text-lg font-black text-indigo-600 bg-white inline-block px-5 py-1.5 rounded-2xl shadow-sm border border-indigo-50 mt-4 font-mono">{bill.user_code}</p>
                 </div>
-                
+
                 <div className="space-y-4 font-bold text-slate-600">
-                  <div className="flex justify-between items-center bg-white/50 p-4 rounded-2xl border border-white">
-                    <span className="text-xs font-black text-slate-400">وقت الاستخدام</span>
-                    <span className="text-slate-900 font-black">
-                       {Math.floor((bill.total_minutes || 0) / 60)}h {Number(bill.total_minutes || 0) % 60}m
+                  <div className="flex justify-between items-center bg-white/70 p-5 rounded-2xl border border-white shadow-sm">
+                    <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">وقت الاستخدام</span>
+                    <span className="text-slate-900 font-black text-lg">
+                       <span className="text-indigo-600">{Math.floor((bill.total_minutes || 0) / 60)}</span>h <span className="text-indigo-600">{Number(bill.total_minutes || 0) % 60}</span>m
                     </span>
                   </div>
                   
-                  <div className="flex justify-between items-center bg-white/50 p-4 rounded-2xl border border-white text-right">
-                    <span className="text-xs font-black text-slate-400">تكفلة الجلسة</span>
-                    <span className={`font-black ${bill.payment_method === 'subscription' ? 'text-indigo-600' : 'text-slate-900'}`}>
-                       {bill.payment_method === 'subscription' ? '✓ اشتراك ساعات فعال' : `${Number(bill.total_amount || 0) - (Number(bill.catering_amount) || 0)} EGP`}
+                  <div className="flex justify-between items-center bg-white/70 p-5 rounded-2xl border border-white shadow-sm text-right">
+                    <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">تكلفة الجلسة</span>
+                    <span className={`font-black text-lg ${bill.payment_method === 'subscription' ? 'text-emerald-600' : 'text-slate-900'}`}>
+                       {bill.payment_method === 'subscription' ? '✓ مخصوم من الاشتراك' : `${Number(bill.total_amount || 0) - (Number(bill.catering_amount) || 0)} EGP`}
                     </span>
                   </div>
 
                   {bill.payment_method === 'subscription' && (
-                    <div className="bg-indigo-900 text-white p-6 rounded-3xl shadow-lg relative overflow-hidden group">
-                      <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
+                    <div className="bg-slate-900 text-white p-8 rounded-[2rem] shadow-2xl relative overflow-hidden group">
+                      <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-500/20 rounded-full blur-[60px] animate-pulse" />
                       <div className="flex justify-between items-center relative z-10">
                         <div className="text-left">
-                          <p className="text-2xl font-black">{loading ? '...' : sub ? (sub.total_hours - sub.used_hours).toFixed(1) : '0.0'} <span className="text-[10px] opacity-40 uppercase tracking-widest ml-1">H Left</span></p>
-                          <p className="text-[8px] font-black text-indigo-300 uppercase tracking-widest mt-1">
+                          <p className="text-3xl font-black text-white">{loading ? '...' : sub ? (sub.total_hours - sub.used_hours).toFixed(1) : '0.0'} <span className="text-[10px] opacity-40 uppercase tracking-widest ml-1">H Left</span></p>
+                          <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest mt-1">
                             Expires: {sub ? new Date(sub.end_date).toLocaleDateString('ar-EG') : '...'}
                           </p>
                         </div>
                         <div className="text-right">
-                          <div className="flex items-center gap-1 justify-end mb-1">
-                            <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Subscription</p>
-                            <Sparkles size={10} className="text-emerald-400" />
+                          <div className="flex items-center gap-2 justify-end mb-1">
+                            <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Subscription</p>
+                            <Sparkles size={12} className="text-amber-400" />
                           </div>
-                          <p className="text-xs font-black whitespace-nowrap">{(Number(bill.total_minutes || 0) / 60).toFixed(2)}h used</p>
+                          <p className="text-sm font-black whitespace-nowrap">{(Number(bill.total_minutes || 0) / 60).toFixed(2)}h consumed</p>
                         </div>
                       </div>
                     </div>
                   )}
                   
-                  <div className="flex justify-between items-center bg-white/50 p-4 rounded-2xl border border-white">
-                    <span className="text-xs font-black text-slate-400">رصيد المتجر</span>
-                    <span className="text-slate-900 font-black">{bill.catering_amount || 0} EGP</span>
+                  <div className="flex justify-between items-center bg-white/70 p-5 rounded-2xl border border-white shadow-sm">
+                    <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">رصيد الكافيتريا</span>
+                    <span className="text-slate-900 font-black text-lg">{bill.catering_amount || 0} <span className="text-xs opacity-30">EGP</span></span>
                   </div>
                 </div>
 
                 {bill.orders && bill.orders.length > 0 && (
-                  <div className="mt-8 pt-6 border-t border-slate-200">
-                    <p className="text-[10px] font-black text-slate-400 mb-4 uppercase tracking-[0.2em] text-center">أصناف الكافيتريا</p>
-                    <div className="space-y-2">
+                  <div className="mt-10 pt-8 border-t-2 border-dashed border-slate-200">
+                    <p className="text-[10px] font-black text-slate-400 mb-6 uppercase tracking-[0.3em] text-center">أصناف الضيافة</p>
+                    <div className="space-y-3">
                       {bill.orders.map((o: any, idx: number) => (
-                        <div key={idx} className="flex justify-between items-center text-xs font-black bg-white rounded-xl p-3 border border-slate-50 shadow-sm gap-3">
-                          <div className="flex items-center gap-2">
-                            {o.image_url && (
-                              <img src={o.image_url} className="w-8 h-8 rounded-lg object-cover border border-slate-100" alt="" />
+                        <div key={idx} className="flex justify-between items-center text-xs font-black bg-white/80 backdrop-blur-sm rounded-[1.25rem] p-4 border border-white shadow-sm gap-4 group/item hover:bg-white transition-colors">
+                          <div className="flex items-center gap-3">
+                            {o.image_url ? (
+                              <img src={o.image_url} className="w-10 h-10 rounded-xl object-cover ring-2 ring-slate-100" alt="" />
+                            ) : (
+                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-300">
+                                    <ShoppingBag size={18} />
+                                </div>
                             )}
-                            <span className="text-slate-500">{o.name} <span className="opacity-40 ml-1">x{o.quantity}</span></span>
+                            <div className="text-right">
+                                <span className="text-slate-800 text-sm block">{o.name}</span>
+                                <span className="text-indigo-400 text-[10px] uppercase">Quantity x{o.quantity}</span>
+                            </div>
                           </div>
-                          <span className="text-slate-900 font-mono">{o.price} EGP</span>
+                          <span className="text-slate-900 font-mono text-base">{o.price} <span className="text-[8px] opacity-30">EGP</span></span>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
                 
-                <div className="pt-8 mt-4 border-t-2 border-dashed border-slate-200 flex flex-col items-center gap-1">
-                  <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">المبلغ كاش للمتجر</span>
-                  <p className="text-5xl font-black text-emerald-600 drop-shadow-sm">
-                    {bill.payment_method === 'subscription' ? bill.catering_amount : bill.total_amount} 
-                    <span className="text-base opacity-30 ml-2">EGP</span>
-                  </p>
+                <div className="pt-10 mt-6 border-t border-slate-200 flex flex-col items-center gap-2">
+                  <span className="text-slate-400 text-[11px] font-black uppercase tracking-[0.2em]">المبلغ المستحق للدفع</span>
+                  <div className="relative">
+                    <div className="absolute inset-x-0 bottom-1 h-3 bg-emerald-500/10 -rotate-1 rounded-full blur-[2px]" />
+                    <p className="text-6xl font-black text-emerald-600 relative z-10 italic">
+                      {bill.payment_method === 'subscription' ? bill.catering_amount : bill.total_amount} 
+                      <span className="text-xl opacity-30 ml-3 not-italic">EGP</span>
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <button
+              <div className="pt-4">
+                <Button
                   onClick={onClose}
-                  className="w-full py-6 bg-slate-900 text-white font-black rounded-[2.5rem] shadow-xl hover:bg-black hover:-translate-y-1 active:scale-95 transition-all text-lg flex items-center justify-center gap-3 group"
+                  className="w-full h-20 bg-slate-900 text-white font-black rounded-[2rem] shadow-2xl hover:bg-black active:scale-95 transition-all text-xl flex items-center justify-center gap-4 group"
                 >
-                  <CheckCircle2 size={24} className="text-emerald-400" />
-                  <span>تم الدفع والإنهاء</span>
-                  <ChevronLeft size={24} className="group-hover:-translate-x-1 transition-transform" />
-                </button>
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center shadow-lg group-hover:rotate-12 transition-transform">
+                    <CheckCircle2 size={24} className="text-white" />
+                  </div>
+                  <span>إنهاء الحضور الآن</span>
+                </Button>
               </div>
             </div>
-          </div>
         </div>
     );
 };

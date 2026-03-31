@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, CheckCircle2, AlertCircle, RefreshCw, X, Receipt, Users2, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { calculateSessionPrice } from '../lib/pricing';
+import { Modal } from '../components/ui';
 
 interface Session {
   id: string;
@@ -533,20 +534,14 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
       </div>
       
       {/* Bill Adjustment Modal */}
-      {editingBill && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl z-[100] flex items-center justify-center p-4 animate-in fade-in transition-all">
-          <div className="bg-white rounded-[3rem] p-8 max-w-2xl w-full shadow-2xl animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col">
-            <div className="flex justify-between items-center mb-6">
-               <div className="flex items-center gap-3">
-                  <Receipt className="text-indigo-600" size={24} />
-                  <h2 className="text-xl font-black text-slate-900">مراجعة وتعديل الحساب</h2>
-               </div>
-               <button onClick={() => setEditingBill(null)} className="p-2 text-slate-400 hover:bg-slate-50 rounded-full transition-colors">
-                  <X size={20} />
-               </button>
-            </div>
-
-            <div className="space-y-6 flex-1 pr-1">
+      <Modal 
+        isOpen={!!editingBill} 
+        onClose={() => setEditingBill(null)} 
+        title="مراجعة وتعديل الحساب"
+        className="max-w-2xl"
+      >
+        {editingBill && (
+            <div className="space-y-6 flex-1">
               {/* Subscription Info Badge */}
               {editingBill.isSubscribed && (
                 <div className="bg-indigo-900 text-white p-6 rounded-3xl relative overflow-hidden group shadow-xl">
@@ -662,46 +657,32 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                   )}
                 </div>
               </div>
-            </div>
 
-            {/* Footer Summary */}
-            <div className="mt-8 pt-6 border-t border-slate-100">
-               <div className="flex justify-between items-center mb-6">
-                  <div className="text-right">
-                    <p className="text-2xl font-black text-emerald-600">{editingBill.totalAmount} <span className="text-xs">EGP</span></p>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">الإجمالي النهائي</p>
-                  </div>
-                  <div className="flex gap-4">
-                    <button onClick={() => setEditingBill(null)} className="px-6 py-3 rounded-2xl bg-slate-100 text-slate-600 font-black text-sm hover:bg-slate-200 transition-all">إلغاء</button>
-                    <button onClick={handleAcceptCheckout} className="px-10 py-3 rounded-2xl bg-emerald-600 text-white font-black text-sm shadow-xl shadow-emerald-100 hover:bg-emerald-700 hover:-translate-y-1 transition-all">تأكيد ومحاسبة</button>
-                  </div>
-               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {checkoutBill && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in transition-all">
-          <div className="bg-white rounded-t-[3rem] sm:rounded-[3rem] p-10 max-w-md w-full shadow-2xl animate-in slide-in-from-bottom-20 duration-500 max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <div className="flex justify-between items-center mb-10">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-100">
-                  <Receipt size={28} />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-black text-slate-900 leading-tight">فاتورة العميل</h2>
-                  <p className="text-indigo-600 text-xs font-black tracking-widest mt-1 uppercase">Order Checkout</p>
-                </div>
+              {/* Footer Summary */}
+              <div className="mt-8 pt-6 border-t border-slate-100">
+                 <div className="flex justify-between items-center mb-6">
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-emerald-600">{editingBill.totalAmount} <span className="text-xs">EGP</span></p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">الإجمالي النهائي</p>
+                    </div>
+                    <div className="flex gap-4">
+                      <button onClick={() => setEditingBill(null)} className="px-6 py-3 rounded-2xl bg-slate-100 text-slate-600 font-black text-sm hover:bg-slate-200 transition-all">إلغاء</button>
+                      <button onClick={handleAcceptCheckout} className="px-10 py-3 rounded-2xl bg-emerald-600 text-white font-black text-sm shadow-xl shadow-emerald-100 hover:bg-emerald-700 hover:-translate-y-1 transition-all">تأكيد ومحاسبة</button>
+                    </div>
+                 </div>
               </div>
-              <button 
-                onClick={() => setCheckoutBill(null)} 
-                className="p-3 text-slate-400 hover:bg-slate-100 rounded-full transition-all"
-              >
-                <X size={24} />
-              </button>
             </div>
-            
+        )}
+      </Modal>
+
+      {/* Checkout Success Bill Modal */}
+      <Modal 
+        isOpen={!!checkoutBill} 
+        onClose={() => setCheckoutBill(null)} 
+        title="فاتورة العميل"
+        className="max-w-md"
+      >
+        {checkoutBill && (
             <div className="space-y-8">
               <div className="bg-slate-50/80 rounded-[2.5rem] p-8 space-y-6 relative overflow-hidden border border-slate-100">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl -z-10" />
@@ -784,9 +765,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 };

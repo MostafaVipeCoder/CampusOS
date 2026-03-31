@@ -4,7 +4,7 @@ import {
   Sparkles, Truck, Coffee, Wrench, Zap, PenTool, Users, Package, Megaphone, Home, Heart, 
   MoreHorizontal, Wallet, Landmark, Image as ImageIcon, History, AlertCircle, ShoppingCart, Edit 
 } from 'lucide-react';
-import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input } from '../components/ui';
+import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input, Modal } from '../components/ui';
 import { supabase } from '../lib/supabase';
 
 const EXPENSE_CATEGORIES = [
@@ -46,7 +46,7 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
     supplier: '',
     note: '',
     date: new Date().toISOString().split('T')[0],
-    items: [] as { name: string, price: string, qty: string, unit: string, piecesPerUnit: string }[]
+    items: [] as { name: string, price: string, qty: string, unit: string, piecesPerUnit: string, image_url?: string }[]
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -102,12 +102,13 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
             for (const item of uniqueItems) {
                 if (!item.name || parseFloat(item.qty) <= 0) continue;
                 
-                // Find or Create in inventory
+                // Find or Create in inventory (matching name AND branch to isolate)
                 const { data: existing } = await supabase
                     .from('inventory')
                     .select('id, stock')
                     .eq('name', item.name.trim())
                     .eq('category', newExpense.category)
+                    .eq('branch_id', branchId || null)
                     .maybeSingle();
                     
                 if (existing) {
@@ -120,11 +121,15 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
                         stock: (existing.stock || 0) + stockToAdd, 
                         last_restock: newExpense.date,
                         price: costVal / ppu, // COST per piece
+                        selling_price: sellingPrice, // Retail Price per piece
                         pieces_per_unit: ppu,
+                        image_url: item.image_url || null, // SYNC IMAGE
                         unit: 'قطعة'
                     } : { 
                         price: costVal / ppu, // Update COST on edit too
-                        pieces_per_unit: ppu
+                        selling_price: sellingPrice,
+                        pieces_per_unit: ppu,
+                        image_url: item.image_url || null
                     };
 
                     await supabase.from('inventory').update(updateObj).eq('id', existing.id);
@@ -147,7 +152,9 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
                             notes: newExpense.note + ` (Bought ${item.qty} ${item.unit} x ${ppu} pc)`
                         }]);
                     }
-                } else if (!editingExpenseId) {
+                } else {
+                    // Create NEW Inventory Record (even if editing the expense, 
+                    // we should create the item if it never existed before)
                     const costVal = parseFloat(item.price);
                     const ppu = parseFloat(item.piecesPerUnit || '1') || 1;
                     const initialStock = parseFloat(item.qty) * ppu;
@@ -159,6 +166,7 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
                             category: newExpense.category,
                             stock: initialStock,
                             price: costVal / ppu, // COST per piece
+                            selling_price: sellingPrice, // Retail Price per piece
                             min_stock: 12,
                             unit: 'قطعة', 
                             pieces_per_unit: ppu,
@@ -172,6 +180,7 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
                             name: item.name.trim(),
                             price: sellingPrice, // RETAIL SELLING PRICE
                             branch_id: branchId || null,
+                            image_url: item.image_url || null, // SYNC IMAGE FOR NEW ITEM
                             is_active: true
                         }, { onConflict: 'inventory_id' } as any);
                     }
@@ -270,7 +279,7 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
   const addItemRow = () => {
     setNewExpense({
       ...newExpense,
-      items: [...newExpense.items, { name: '', price: '', qty: '1', unit: 'كرتونة', piecesPerUnit: '12', sellingPrice: '' }]
+      items: [...newExpense.items, { name: '', price: '', qty: '1', unit: 'كرتونة', piecesPerUnit: '12', sellingPrice: '', image_url: '' }]
     });
   };
 
@@ -443,10 +452,12 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
         </div>
       </div>
 
-      {/* Redesigned Add Expense Modal - Premium Glassmorphic Portal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-md z-[100] flex items-center justify-center p-6 animate-in fade-in duration-500">
-          <div className={`w-full ${newExpense.category === 'مطبخ وبوفيه' || newExpense.category === 'أدوات مكتبية' ? 'max-w-4xl' : 'max-w-xl'} bg-white rounded-[3rem] shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-500 border border-white/20`}>
+      <Modal 
+        isOpen={showAddModal} 
+        onClose={() => setShowAddModal(false)}
+        className={newExpense.category === 'مطبخ وبوفيه' || newExpense.category === 'أدوات مكتبية' ? 'max-w-4xl' : 'max-w-xl'}
+      >
+          <div className="w-full bg-white rounded-[3rem] shadow-none overflow-hidden relative border-none">
             {/* Modal Header */}
             <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <div className="flex items-center gap-4">
@@ -517,112 +528,164 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
                       <div className="space-y-4">
                         {newExpense.items.map((item, idx) => (
                           <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm relative animate-in slide-in-from-right-2 duration-300">
-                            <button onClick={() => removeItem(idx)} className="absolute -top-2 -right-2 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-sm hover:bg-rose-600 transition-colors">
+                            <button onClick={() => removeItem(idx)} className="absolute -top-2 -right-2 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-sm hover:bg-rose-600 transition-colors z-30">
                               <X size={12} />
                             </button>
-                            <div className="grid grid-cols-1 gap-4">
-                              <Input
-                                value={item.name}
-                                onChange={(e) => updateItem(idx, 'name', e.target.value)}
-                                placeholder="اسم الصنف (مثلاً: سكر)"
-                                className="h-12 text-sm font-bold border-2 border-slate-50 bg-slate-50/30 rounded-xl focus:bg-white transition-all text-right"
-                              />
-                              <div className="grid grid-cols-4 gap-2">
-                                <div className="space-y-1">
-                                  <label className="text-[8px] font-black text-slate-400 block px-1 text-right">سعر الكرتونة</label>
-                                  <Input
-                                    type="number"
-                                    value={item.price}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        const newItems = [...newExpense.items];
-                                        newItems[idx].price = val;
-                                        // Auto-suggest selling price (cost * 1.5)
-                                        const ppu = parseFloat(item.piecesPerUnit) || 1;
-                                        const suggested = (parseFloat(val) / ppu * 1.5).toFixed(2);
-                                        newItems[idx].sellingPrice = suggested;
-                                        setNewExpense({ ...newExpense, items: newItems });
-                                    }}
-                                    placeholder="السعر"
-                                    className="h-10 text-[10px] font-black border-none bg-slate-50 rounded-lg text-center"
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <label className="text-[8px] font-black text-slate-400 block px-1 text-right">عدد الكراتين</label>
-                                  <Input
-                                    type="number"
-                                    value={item.qty}
-                                    onChange={(e) => updateItem(idx, 'qty', e.target.value)}
-                                    placeholder="الكمية"
-                                    className="h-10 text-[10px] font-black border-none bg-slate-50 rounded-lg text-center"
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                   <label className="text-[8px] font-black text-slate-400 block px-1 text-right">نوع الوحدة</label>
-                                   <select
-                                      value={item.unit}
-                                      onChange={(e) => updateItem(idx, 'unit', e.target.value)}
-                                      className="w-full h-10 rounded-lg border-none bg-slate-50 px-1 text-[9px] font-black outline-none"
-                                    >
-                                      <option>كرتونة</option>
-                                      <option>باكتة</option>
-                                      <option>علبة</option>
-                                      <option>قطعة</option>
-                                    </select>
-                                </div>
-                                <div className="space-y-1">
-                                  <label className="text-[8px] font-black text-indigo-400 block px-1 text-right">قطع / {item.unit}</label>
-                                  <Input
-                                    type="number"
-                                    value={item.piecesPerUnit}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        const newItems = [...newExpense.items];
-                                        newItems[idx].piecesPerUnit = val;
-                                        // Update suggestion
-                                        const cost = parseFloat(item.price) || 0;
-                                        const suggested = (cost / (parseFloat(val) || 1) * 1.5).toFixed(2);
-                                        newItems[idx].sellingPrice = suggested;
-                                        setNewExpense({ ...newExpense, items: newItems });
-                                    }}
-                                    placeholder="قطع/و"
-                                    className="h-10 text-[10px] font-black border-none bg-indigo-50 text-indigo-600 rounded-lg text-center"
-                                  />
+                            <div className="flex gap-4">
+                              <div className="flex-1 space-y-4">
+                                <Input
+                                  value={item.name}
+                                  onChange={(e) => updateItem(idx, 'name', e.target.value)}
+                                  placeholder="اسم الصنف (مثلاً: سكر)"
+                                  className="h-12 text-sm font-bold border-2 border-slate-50 bg-slate-50/30 rounded-xl focus:bg-white transition-all text-right"
+                                />
+                                <div className="grid grid-cols-4 gap-2">
+                                  <div className="space-y-1">
+                                    <label className="text-[8px] font-black text-slate-400 block px-1 text-right">سعر الكرتونة</label>
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={item.price}
+                                      onChange={(e) => {
+                                          const val = e.target.value.replace(/[^0-9.]/g, '');
+                                          const newItems = [...newExpense.items];
+                                          newItems[idx].price = val;
+                                          // Auto-suggest selling price (cost * 1.5)
+                                          const ppu = parseFloat(item.piecesPerUnit) || 1;
+                                          const suggested = (parseFloat(val) / ppu * 1.5).toFixed(2);
+                                          newItems[idx].sellingPrice = suggested;
+                                          setNewExpense({ ...newExpense, items: newItems });
+                                      }}
+                                      placeholder="السعر"
+                                      className="h-10 text-[10px] font-black border-none bg-slate-50 rounded-lg text-center"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[8px] font-black text-slate-400 block px-1 text-right font-['Cairo']">عدد الكراتين</label>
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={item.qty}
+                                      onChange={(e) => updateItem(idx, 'qty', e.target.value.replace(/[^0-9.]/g, ''))}
+                                      placeholder="الكمية"
+                                      className="h-10 text-[10px] font-black border-none bg-slate-50 rounded-lg text-center"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                     <label className="text-[8px] font-black text-slate-400 block px-1 text-right">نوع الوحدة</label>
+                                     <select
+                                        value={item.unit}
+                                        onChange={(e) => updateItem(idx, 'unit', e.target.value)}
+                                        className="w-full h-10 rounded-lg border-none bg-slate-50 px-1 text-[9px] font-black outline-none"
+                                      >
+                                        <option>كرتونة</option>
+                                        <option>باكتة</option>
+                                        <option>علبة</option>
+                                        <option>قطعة</option>
+                                      </select>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[8px] font-black text-indigo-400 block px-1 text-right">قطع / {item.unit}</label>
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={item.piecesPerUnit}
+                                      onChange={(e) => {
+                                          const val = e.target.value.replace(/[^0-9]/g, '');
+                                          const newItems = [...newExpense.items];
+                                          newItems[idx].piecesPerUnit = val;
+                                          // Update suggestion
+                                          const cost = parseFloat(item.price) || 0;
+                                          const suggested = (cost / (parseFloat(val) || 1) * 1.5).toFixed(2);
+                                          newItems[idx].sellingPrice = suggested;
+                                          setNewExpense({ ...newExpense, items: newItems });
+                                      }}
+                                      placeholder="قطع/و"
+                                      className="h-10 text-[10px] font-black border-none bg-indigo-50 text-indigo-600 rounded-lg text-center"
+                                    />
+                                  </div>
                                 </div>
                               </div>
-                              
-                              <div className="mt-3 space-y-3">
-                                {/* Live math summary */}
-                                <div className="flex justify-between items-center bg-indigo-50/20 px-4 py-2 rounded-xl border border-dashed border-indigo-100">
-                                  <div className="flex items-center gap-2 text-[10px] font-black text-slate-500">
-                                    <span>{item.qty || '0'} {item.unit}</span>
-                                    <span>×</span>
-                                    <span>{item.piecesPerUnit || '1'} قطعة</span>
-                                    <span>=</span>
-                                    <span className="text-indigo-600">{(parseFloat(item.qty || '0') * parseFloat(item.piecesPerUnit || '1')) || 0} قطعة إجمالي</span>
-                                  </div>
-                                  <div className="text-[9px] font-bold text-slate-400">
-                                     التكلفة: {((parseFloat(item.price || '0') / parseFloat(item.piecesPerUnit || '1')) || 0).toFixed(2)} ج/قطعة
-                                  </div>
-                                </div>
 
-                                {/* Custom Selling Price Input */}
-                                <div className="flex items-center gap-4 bg-emerald-50/50 p-3 rounded-2xl border border-emerald-100">
-                                    <div className="flex-1">
-                                        <p className="text-[9px] font-black text-emerald-600 mb-1">المقترح (ربح 50%): {((parseFloat(item.price || '0') / parseFloat(item.piecesPerUnit || '1')) * 1.5).toFixed(2)} جينه</p>
-                                        <p className="text-[8px] text-slate-400">يمكنك تعديل السعر الذي تريد البيع به للقطعة</p>
-                                    </div>
-                                    <div className="w-24 relative group">
-                                        <Input
-                                            type="number"
-                                            value={item.sellingPrice}
-                                            onChange={(e) => updateItem(idx, 'sellingPrice', e.target.value)}
-                                            className="h-10 text-xs font-black text-center bg-white border-2 border-emerald-200 rounded-xl focus:border-emerald-500 transition-all text-emerald-700"
-                                            placeholder="سعر البيع"
-                                        />
-                                        <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-[7px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">سعر البيع</div>
-                                    </div>
+                              {/* Product Image Upload per Item */}
+                              <div className="w-24 h-24 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[1.5rem] flex items-center justify-center overflow-hidden relative group cursor-pointer shrink-0 mt-2">
+                                  <input 
+                                      type="file" 
+                                      accept="image/*" 
+                                      className="absolute inset-0 opacity-0 cursor-pointer z-20" 
+                                      onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (!file) return;
+                                          try {
+                                              const fileExt = file.name.split('.').pop();
+                                              const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
+                                              const filePath = `inventory/${branchId || 'default'}/${fileName}`;
+                                              
+                                              const { error: uploadError } = await supabase.storage
+                                                  .from('inventory-images')
+                                                  .upload(filePath, file);
+                                              
+                                              if (uploadError) throw uploadError;
+                                              
+                                              const { data: { publicUrl } } = supabase.storage
+                                                  .from('inventory-images')
+                                                  .getPublicUrl(filePath);
+                                              
+                                              const newItems = [...newExpense.items];
+                                              newItems[idx].image_url = publicUrl;
+                                              setNewExpense({ ...newExpense, items: newItems });
+                                          } catch (err) {
+                                              console.error('Upload error:', err);
+                                              alert('خطأ أثناء رفع الصورة');
+                                          }
+                                      }}
+                                  />
+                                  {item.image_url ? (
+                                      <img src={item.image_url} className="w-full h-full object-cover" />
+                                  ) : (
+                                      <div className="text-center">
+                                          <ImageIcon size={24} className="text-slate-300 mx-auto" />
+                                          <p className="text-[7px] text-slate-400 mt-1 font-black">صورة المنتج</p>
+                                      </div>
+                                  )}
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity z-10">
+                                      <Plus size={16} className="text-white" />
+                                  </div>
+                              </div>
+                            </div>
+                            
+                            <div className="mt-3 space-y-3">
+                              {/* Live math summary */}
+                              <div className="flex justify-between items-center bg-indigo-50/20 px-4 py-2 rounded-xl border border-dashed border-indigo-100">
+                                <div className="flex items-center gap-2 text-[10px] font-black text-slate-500">
+                                  <span>{item.qty || '0'} {item.unit}</span>
+                                  <span>×</span>
+                                  <span>{item.piecesPerUnit || '1'} قطعة</span>
+                                  <span>=</span>
+                                  <span className="text-indigo-600">{(parseFloat(item.qty || '0') * parseFloat(item.piecesPerUnit || '1')) || 0} قطعة إجمالي</span>
                                 </div>
+                                <div className="text-[9px] font-bold text-slate-400">
+                                   التكلفة: {((parseFloat(item.price || '0') / parseFloat(item.piecesPerUnit || '1')) || 0).toFixed(2)} ج/قطعة
+                                </div>
+                              </div>
+
+                              {/* Custom Selling Price Input */}
+                              <div className="flex items-center gap-4 bg-emerald-50/50 p-3 rounded-2xl border border-emerald-100">
+                                  <div className="flex-1 text-right">
+                                      <p className="text-[9px] font-black text-emerald-600 mb-1">المقترح (ربح 50%): {((parseFloat(item.price || '0') / parseFloat(item.piecesPerUnit || '1')) * 1.5).toFixed(2)} جينه</p>
+                                      <p className="text-[8px] text-slate-400">سعر البيع المعروض للمستخدم في الكاترينج</p>
+                                  </div>
+                                  <div className="w-24 relative group">
+                                      <Input
+                                          type="text"
+                                          inputMode="decimal"
+                                          value={item.sellingPrice}
+                                          onChange={(e) => updateItem(idx, 'sellingPrice', e.target.value.replace(/[^0-9.]/g, ''))}
+                                          className="h-10 text-xs font-black text-center bg-white border-2 border-emerald-200 rounded-xl focus:border-emerald-500 transition-all text-emerald-700"
+                                          placeholder="سعر البيع"
+                                      />
+                                      <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-[7px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">سعر البيع</div>
+                                  </div>
                               </div>
                             </div>
                           </div>
@@ -743,8 +806,7 @@ export const ExpensesPanel = ({ branchId }: { branchId?: string }) => {
               </div>
             </div>
           </div>
-        </div>
-      )}
+      </Modal>
 
     </div>
   );

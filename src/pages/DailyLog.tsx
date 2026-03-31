@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CalendarDays, ShoppingBag, Clock, CheckCircle2, User, RefreshCw, X, Receipt, TrendingUp, TrendingDown, Trash2, Tag, Sparkles, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Edit3, Save, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui';
+import { Card, CardHeader, CardTitle, CardContent, Modal } from '../components/ui';
 
 interface Session {
   id: string;
@@ -429,25 +429,17 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
         </div>
       </div>
 
-      {/* Edit Session Modal - High End */}
-      {editingSession && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-3xl z-[200] flex items-center justify-center p-6 animate-in fade-in duration-500">
-          <div className="w-full max-w-xl bg-white rounded-[4rem] shadow-3xl overflow-hidden relative border border-white translate-y-[-5%] animate-in zoom-in-95 duration-500">
-             <div className="p-12 pb-8 border-b border-slate-50 relative overflow-hidden flex flex-row-reverse justify-between items-center text-right">
-                <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-indigo-500/5 to-transparent -z-10" />
-                <div>
-                   <div className="flex items-center gap-3 justify-end mb-2">
-                      <div className="p-2 bg-indigo-600 text-white rounded-2xl"><Edit3 size={24}/></div>
-                      <h3 className="text-3xl font-black text-slate-800 tracking-tight">تعديل سجل الجلسة</h3>
-                   </div>
-                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mr-14">Administrative Override Portal</p>
-                </div>
-                <button onClick={() => setEditingSession(null)} className="p-5 bg-slate-50 rounded-3xl hover:bg-rose-50 hover:text-rose-600 transition-all active:scale-90 border border-slate-100"><X size={28}/></button>
-             </div>
-
-             <div className="p-12 space-y-10">
+      {/* Edit Session Modal - High End Portal */}
+      <Modal
+        isOpen={!!editingSession}
+        onClose={() => setEditingSession(null)}
+        title={editingSession ? `تعديل سجل الجلسة - ${editingSession.user_code}` : ""}
+        className="max-w-xl p-0 overflow-hidden"
+      >
+          <div className="bg-white text-right font-['Cairo']">
+             <div className="p-10 space-y-10">
                 {/* Subscription Info Card if applicable */}
-                {editingSession.payment_method === 'subscription' && (
+                {editingSession && editingSession.payment_method === 'subscription' && (
                   <div className="bg-indigo-900 text-white p-8 rounded-[2.5rem] relative overflow-hidden group shadow-xl">
                     <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-indigo-500/20 to-transparent -z-10" />
                     <div className="flex flex-row-reverse justify-between items-center relative z-10 text-right">
@@ -457,7 +449,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                             <span className="text-sm opacity-50 uppercase tracking-widest mr-2">H Left</span>
                           </p>
                           <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mt-1">
-                            Expires: {new Date(editingSession.customers?.subscriptions?.[0]?.end_date).toLocaleDateString('ar-EG')}
+                            Expires: {editingSession.customers?.subscriptions?.[0] ? new Date(editingSession.customers.subscriptions[0].end_date).toLocaleDateString('ar-EG') : 'N/A'}
                           </p>
                        </div>
                        <div className="text-right">
@@ -474,7 +466,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                    <div className="space-y-3">
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest text-right mr-2">وقت البدء</label>
                       <input 
@@ -495,7 +487,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                    </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                    <div className="space-y-3">
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest text-right mr-2">تكلفة المتجر</label>
                       <input 
@@ -526,8 +518,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                 </button>
              </div>
           </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 };

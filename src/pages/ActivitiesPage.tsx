@@ -4,6 +4,7 @@ import { Tables } from '../database.types';
 import { Plus, X, Calendar, MapPin, Target, CheckCircle2, Circle, XCircle, Loader2 } from 'lucide-react';
 import { format, parseISO, getMonth } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import { Modal } from '../components/ui';
 
 type Activity = Tables<'branch_activities'>;
 
@@ -187,56 +188,89 @@ export const ActivitiesPage = ({ branchId }: { branchId?: string }) => {
                 ))
             )}
 
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-2xl overflow-hidden">
-                        <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
-                            <h3 className="text-xl font-black flex items-center gap-2"><Plus className="text-indigo-400" /> إضافة نشاط جديد</h3>
-                            <button onClick={() => setIsModalOpen(false)}><X className="opacity-50 hover:opacity-100 transition-opacity" /></button>
+            {/* Activity Creation Modal - via Portal */}
+            <Modal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                title="إضافة نشاط جديد"
+                className="max-w-lg p-0 overflow-hidden"
+            >
+                <div className="bg-white text-right font-['Cairo']">
+                    <div className="p-8 space-y-6">
+                        <div className="space-y-2">
+                            <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mr-2">اسم النشاط</label>
+                            <input 
+                                type="text" 
+                                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-400 transition-all"
+                                value={formData.name} 
+                                onChange={e => setFormData({ ...formData, name: e.target.value })} 
+                            />
                         </div>
-                        <div className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 mb-2">اسم النشاط</label>
-                                <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
-                                    value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mr-2">تاريخ النشاط</label>
+                                <input 
+                                    type="date" 
+                                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-400 transition-all"
+                                    value={formData.activity_date} 
+                                    onChange={e => setFormData({ ...formData, activity_date: e.target.value })} 
+                                />
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-2">تاريخ النشاط</label>
-                                    <input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
-                                        value={formData.activity_date} onChange={e => setFormData({ ...formData, activity_date: e.target.value })} />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-2">الموقع</label>
-                                    <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
-                                        value={formData.location || ''} onChange={e => setFormData({ ...formData, location: e.target.value })} />
-                                </div>
+                            <div className="space-y-2">
+                                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mr-2">الموقع</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-400 transition-all"
+                                    value={formData.location || ''} 
+                                    onChange={e => setFormData({ ...formData, location: e.target.value })} 
+                                />
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 mb-2">وصف النشاط</label>
-                                <textarea rows={3} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
-                                    value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-2">نوع الهدف</label>
-                                    <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
-                                        value={formData.target_type || 'Quantitative'} onChange={e => setFormData({ ...formData, target_type: e.target.value as any })}>
-                                        <option value="Quantitative">كمي (Quantitative)</option>
-                                        <option value="Qualitative">نوعي (Qualitative)</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-2">قيمة المستهدف</label>
-                                    <input type="text" placeholder="مثال: 50 مشارك" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-indigo-500"
-                                        value={formData.target_value || ''} onChange={e => setFormData({ ...formData, target_value: e.target.value })} />
-                                </div>
-                            </div>
-                            <button onClick={handleAddActivity} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all mt-4">حفظ النشاط</button>
                         </div>
+
+                        <div className="space-y-2">
+                            <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mr-2">وصف النشاط</label>
+                            <textarea 
+                                rows={3} 
+                                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-400 transition-all"
+                                value={formData.description || ''} 
+                                onChange={e => setFormData({ ...formData, description: e.target.value })} 
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mr-2">نوع الهدف</label>
+                                <select 
+                                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-400 transition-all appearance-none"
+                                    value={formData.target_type || 'Quantitative'} 
+                                    onChange={e => setFormData({ ...formData, target_type: e.target.value as any })}
+                                >
+                                    <option value="Quantitative">كمي (Quantitative)</option>
+                                    <option value="Qualitative">نوعي (Qualitative)</option>
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mr-2">قيمة المستهدف</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="مثال: 50 مشارك" 
+                                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold outline-none focus:border-indigo-400 transition-all"
+                                    value={formData.target_value || ''} 
+                                    onChange={e => setFormData({ ...formData, target_value: e.target.value })} 
+                                />
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={handleAddActivity} 
+                            className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-lg shadow-xl shadow-indigo-100 hover:bg-slate-900 transition-all active:scale-95 mt-4"
+                        >
+                            حفظ النشاط الآن
+                        </button>
                     </div>
                 </div>
-            )}
+            </Modal>
         </div>
     );
 };

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { CheckCircle2, QrCode } from 'lucide-react';
+import { CheckCircle2, QrCode, X } from 'lucide-react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import { QRCodeSVG } from 'qrcode.react';
+import { Modal } from '../components/ui';
 
 export const CheckinPortal = ({ branchId }: { branchId?: string }) => {
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -27,14 +28,18 @@ export const CheckinPortal = ({ branchId }: { branchId?: string }) => {
   return (
     <div className="min-h-[80vh] flex flex-col items-center justify-center font-['Cairo'] text-right animate-in fade-in duration-700">
 
-      {/* Success Overlay */}
-      {status === 'success' && (
-        <div className="fixed inset-0 bg-emerald-500/95 z-50 flex flex-col items-center justify-center text-white animate-in zoom-in duration-300">
+      {/* Success Overlay via Portal Modal */}
+      <Modal 
+        isOpen={status === 'success'} 
+        onClose={() => setStatus('idle')}
+        className="max-w-none w-screen h-screen m-0 p-0 rounded-none bg-emerald-500/95"
+      >
+        <div className="flex flex-col items-center justify-center text-white h-full font-['Cairo'] text-right">
           <CheckCircle2 size={120} className="mb-6 animate-bounce" />
           <h1 className="text-6xl font-black mb-4">تم تسجيل الدخول</h1>
           <p className="text-3xl font-bold opacity-90">أهلاً بك، {scannedName}</p>
         </div>
-      )}
+      </Modal>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 w-full max-w-6xl mx-auto items-center">
 
