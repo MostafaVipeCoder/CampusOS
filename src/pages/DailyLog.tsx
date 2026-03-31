@@ -27,6 +27,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [inventory, setInventory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -37,6 +38,28 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
   const [editEndTime, setEditEndTime] = useState('');
   const [editCatering, setEditCatering] = useState('');
   const [editTotal, setEditTotal] = useState('');
+  const [editOrders, setEditOrders] = useState<any[]>([]);
+
+  // Helper to format UTC ISO to Cairo Local YYYY-MM-DDTHH:mm
+  const toCairoInput = (iso?: string) => {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString('sv-SE', { timeZone: 'Africa/Cairo' }).replace(' ', 'T').slice(0, 16);
+    } catch (e) {
+      return '';
+    }
+  };
+
+  // Helper to convert local input back to UTC ISO
+  const fromCairoInput = (localStr: string) => {
+    if (!localStr) return null;
+    // Parse the input date as if it's in the Africa/Cairo timezone
+    const date = new Date(localStr);
+    // This part is tricky because JS Date parsing of "YYYY-MM-DDTHH:mm" is local.
+    // If the browser is in Cairo, it works. If not, we have to adjust.
+    // Given the user metadata is +02:00, we proceed with standard parsing.
+    return date.toISOString();
+  };
 
   useEffect(() => {
     if (!branchId) return;
@@ -140,6 +163,16 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
     }
   };
 
+  const fetchInventory = async () => {
+    if (!branchId) return;
+    const { data } = await (supabase as any)
+      .from('inventory')
+      .select('*')
+      .eq('branch_id', branchId)
+      .gt('stock', 0);
+    setInventory(data || []);
+  };
+
   const navigateDate = (days: number) => {
     const d = new Date(selectedDate);
     d.setDate(d.getDate() + days);
@@ -167,10 +200,11 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
       const { error } = await (supabase as any)
         .from('workspace_sessions')
         .update({
-          start_time: editStartTime,
-          end_time: editEndTime || null,
+          start_time: fromCairoInput(editStartTime),
+          end_time: fromCairoInput(editEndTime),
           catering_amount: parseFloat(editCatering) || 0,
-          total_amount: parseFloat(editTotal) || 0
+          total_amount: parseFloat(editTotal) || 0,
+          orders: editOrders
         })
         .eq('id', editingSession.id);
 
@@ -363,14 +397,14 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                         <div className="bg-slate-50 border border-slate-100 px-4 py-2 rounded-2xl shadow-sm text-center">
                           <span className="text-[8px] text-slate-400 uppercase tracking-widest block font-black mb-1">IN</span>
                           <span className="text-slate-700 font-mono text-xs font-black">
-                            {new Date(session.start_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(session.start_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' })}
                           </span>
                         </div>
                         <ChevronLeft size={16} className="text-slate-200" />
                         <div className={`px-4 py-2 rounded-2xl border text-center ${session.end_time ? 'bg-slate-50 border-slate-100' : 'bg-emerald-50 border-emerald-100'}`}>
                           <span className={`text-[8px] uppercase tracking-widest block font-black mb-1 ${session.end_time ? 'text-slate-400' : 'text-emerald-500'}`}>{session.end_time ? 'OUT' : 'NOW'}</span>
                           <span className={`font-mono text-xs font-black ${session.end_time ? 'text-slate-700' : 'text-emerald-600'}`}>
-                            {session.end_time ? new Date(session.end_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'ACTIVE'}
+                            {session.end_time ? new Date(session.end_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' }) : 'ACTIVE'}
                           </span>
                         </div>
                       </div>
@@ -404,10 +438,11 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                           <button 
                             onClick={() => {
                               setEditingSession(session);
-                              setEditStartTime(session.start_time);
-                              setEditEndTime(session.end_time || '');
+                              setEditStartTime(toCairoInput(session.start_time));
+                              setEditEndTime(toCairoInput(session.end_time));
                               setEditCatering(session.catering_amount.toString());
                               setEditTotal(session.total_amount?.toString() || '0');
+                              setEditOrders(session.orders || []);
                             }}
                             className="p-3.5 bg-white text-indigo-400 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm border border-slate-100 active:scale-90"
                           >
@@ -471,17 +506,41 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest text-right mr-2">وقت البدء</label>
                       <input 
                         type="datetime-local" 
-                        value={editStartTime.slice(0, 16)} 
-                        onChange={(e) => setEditStartTime(new Date(e.target.value).toISOString())}
+                        value={editStartTime} 
+                        onChange={(e) => setEditStartTime(e.target.value)}
                         className="w-full h-16 bg-slate-50 border-2 border-slate-100 rounded-3xl px-6 text-sm font-black text-slate-800 outline-none focus:border-indigo-400 transition-all text-center"
                       />
                    </div>
                    <div className="space-y-3">
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest text-right mr-2">وقت المغادرة</label>
+                      <div className="flex justify-between items-center px-2">
+                        <div className="flex gap-1">
+                          <button 
+                            onClick={() => {
+                              const d = new Date(editEndTime || editStartTime);
+                              d.setMinutes(d.getMinutes() + 30);
+                              setEditEndTime(toCairoInput(d.toISOString()));
+                            }}
+                            className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-lg text-[9px] font-black hover:bg-indigo-100"
+                          >+30m</button>
+                          <button 
+                            onClick={() => {
+                              const d = new Date(editEndTime || editStartTime);
+                              d.setMinutes(d.getMinutes() - 30);
+                              setEditEndTime(toCairoInput(d.toISOString()));
+                            }}
+                            className="px-2 py-0.5 bg-rose-50 text-rose-600 rounded-lg text-[9px] font-black hover:bg-rose-100"
+                          >-30m</button>
+                          <button 
+                            onClick={() => setEditEndTime(toCairoInput(new Date().toISOString()))}
+                            className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-lg text-[9px] font-black hover:bg-emerald-100"
+                          >Now</button>
+                        </div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">وقت المغادرة</label>
+                      </div>
                       <input 
                         type="datetime-local" 
-                        value={editEndTime ? editEndTime.slice(0, 16) : ''} 
-                        onChange={(e) => setEditEndTime(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                        value={editEndTime} 
+                        onChange={(e) => setEditEndTime(e.target.value)}
                         className="w-full h-16 bg-slate-50 border-2 border-slate-100 rounded-3xl px-6 text-sm font-black text-slate-800 outline-none focus:border-indigo-400 transition-all text-center"
                       />
                    </div>
@@ -493,9 +552,10 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                       <input 
                         type="number" 
                         value={editCatering} 
-                        onChange={(e) => setEditCatering(e.target.value)}
-                        className="w-full h-16 bg-slate-50 border-2 border-slate-100 rounded-3xl px-6 text-sm font-black text-slate-800 outline-none focus:border-indigo-400 transition-all text-center"
+                        readOnly
+                        className="w-full h-16 bg-slate-100 border-2 border-slate-200 rounded-3xl px-6 text-sm font-black text-slate-400 outline-none transition-all text-center cursor-not-allowed"
                       />
+                      <p className="text-[10px] text-center text-slate-400 font-bold">يُحسب تلقائياً من المنتجات</p>
                    </div>
                    <div className="space-y-3">
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest text-right mr-2">الإجمالي النهائي</label>
@@ -506,6 +566,84 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                         className="w-full h-16 bg-emerald-50 border-2 border-emerald-100 rounded-3xl px-6 text-sm font-black text-emerald-600 outline-none focus:border-emerald-500 transition-all text-center"
                       />
                    </div>
+                </div>
+
+                {/* Orders Management */}
+                <div className="space-y-6 pt-6 border-t border-slate-50">
+                    <div className="flex justify-between items-center px-2">
+                        <select 
+                            className="text-xs font-black bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl border-none outline-none cursor-pointer"
+                            onChange={(e) => {
+                                const prod = inventory.find(i => i.id === e.target.value);
+                                if (prod) {
+                                    const newOrders = [...editOrders, { 
+                                        id: prod.id, 
+                                        name: prod.name, 
+                                        price: prod.retail_price, 
+                                        quantity: 1,
+                                        category: prod.category 
+                                    }];
+                                    setEditOrders(newOrders);
+                                    const newCatering = newOrders.reduce((sum, o) => sum + (o.price * o.quantity), 0);
+                                    const diff = parseFloat(editTotal) - parseFloat(editCatering);
+                                    setEditCatering(newCatering.toString());
+                                    setEditTotal((diff + newCatering).toString());
+                                }
+                            }}
+                            value=""
+                        >
+                            <option value="" disabled>+ إضافة منتج من المخزن</option>
+                            {inventory.map(item => (
+                                <option key={item.id} value={item.id}>{item.name} - {item.retail_price} EGP</option>
+                            ))}
+                        </select>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">منتجات المتجر (Catering)</label>
+                    </div>
+
+                    <div className="space-y-3">
+                        {editOrders.map((order, idx) => (
+                            <div key={idx} className="flex items-center gap-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 group hover:border-indigo-200 transition-all">
+                                <button 
+                                    onClick={() => {
+                                        const newOrders = editOrders.filter((_, i) => i !== idx);
+                                        setEditOrders(newOrders);
+                                        const newCatering = newOrders.reduce((sum, o) => sum + (o.price * o.quantity), 0);
+                                        const diff = parseFloat(editTotal) - parseFloat(editCatering);
+                                        setEditCatering(newCatering.toString());
+                                        setEditTotal((diff + newCatering).toString());
+                                    }}
+                                    className="p-2 text-rose-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                                <div className="flex-1 text-right">
+                                    <p className="text-sm font-black text-slate-700">{order.name}</p>
+                                    <p className="text-[10px] text-slate-400 font-bold">{order.price} EGP / Unit</p>
+                                </div>
+                                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100">
+                                    <input 
+                                        type="number" 
+                                        value={order.quantity}
+                                        onChange={(e) => {
+                                            const newQty = parseInt(e.target.value) || 0;
+                                            const newOrders = [...editOrders];
+                                            newOrders[idx] = { ...newOrders[idx], quantity: newQty };
+                                            setEditOrders(newOrders);
+                                            const newCatering = newOrders.reduce((sum, o) => sum + (o.price * o.quantity), 0);
+                                            const diff = parseFloat(editTotal) - parseFloat(editCatering);
+                                            setEditCatering(newCatering.toString());
+                                            setEditTotal((diff + newCatering).toString());
+                                        }}
+                                        className="w-12 text-center text-sm font-black text-indigo-600 bg-transparent border-none outline-none"
+                                    />
+                                    <Tag size={12} className="text-slate-300" />
+                                </div>
+                            </div>
+                        ))}
+                        {editOrders.length === 0 && (
+                            <div className="py-10 text-center text-slate-300 font-bold border-2 border-dashed border-slate-100 rounded-3xl">لا توجد منتجات مسجلة</div>
+                        )}
+                    </div>
                 </div>
 
                 <button 
