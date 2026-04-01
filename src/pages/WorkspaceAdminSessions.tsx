@@ -294,6 +294,27 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
           }
       }
 
+      // 3. Award Loyalty Points
+      if (editingBill.customerId) {
+        const pointsToAward = Math.floor(Number(editingBill.diffMinutes || 0) / 12);
+        if (pointsToAward > 0) {
+          const { data: currentCust } = await supabase
+            .from('customers')
+            .select('loyalty_points')
+            .eq('id', editingBill.customerId)
+            .single() as any;
+          
+          if (currentCust) {
+              await supabase
+                .from('customers')
+                .update({ 
+                  loyalty_points: (Number(currentCust.loyalty_points) || 0) + pointsToAward 
+                } as any)
+                .eq('id', editingBill.customerId);
+          }
+        }
+      }
+
       setCheckoutBill({ ...editingBill, remainingAfter: editingBill.remainingSubHours });
       setEditingBill(null);
       fetchSessions();

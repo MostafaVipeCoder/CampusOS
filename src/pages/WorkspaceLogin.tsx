@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, LogOut, CheckCircle2, Coffee, ShoppingBag, Info, HelpCircle, User, Sparkles, CalendarDays, ChevronLeft, Receipt, X, Search, Package, RefreshCw, Plus, Cookie, Zap, Lock, Wind, PenTool, LayoutGrid, LayoutList, MapPin, ArrowRight } from 'lucide-react';
+import { Clock, LogOut, CheckCircle2, Coffee, ShoppingBag, Info, HelpCircle, User, Sparkles, CalendarDays, ChevronLeft, Receipt, X, Search, Package, RefreshCw, Plus, Cookie, Zap, Lock, Wind, PenTool, LayoutGrid, LayoutList, MapPin, ArrowRight, CreditCard, Phone } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button, Modal } from '../components/ui';
 
 // UI tabs options
-type activeTabType = 'session' | 'catering' | 'about' | 'how_work';
+type activeTabType = 'session' | 'catering' | 'profile' | 'about' | 'how_work';
 
 export const WorkspaceLogin = () => {
   const [branches, setBranches] = useState<any[]>([]);
@@ -30,6 +30,9 @@ export const WorkspaceLogin = () => {
   const [isForgotCode, setIsForgotCode] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [branchId, setBranchId] = useState<string | null>(localStorage.getItem('workspace_branch_id'));
+  const [profileData, setProfileData] = useState<any>(null);
+  const [activeSub, setActiveSub] = useState<any>(null);
+  const [isConverting, setIsConverting] = useState(false);
 
   const [college, setCollege] = useState('');
   const [customCollege, setCustomCollege] = useState('');
@@ -576,9 +579,13 @@ export const WorkspaceLogin = () => {
               total_amount: newData.total_amount,
               total_minutes: newData.total_minutes,
               catering_amount: newData.catering_amount,
-              orders: newData.orders
+              orders: newData.orders,
+              end_time: newData.end_time || prev.end_time
             };
           });
+          
+          // Re-fetch customer data if session updated (to sync points/cashback)
+          fetchProfileData();
         }
       )
       .on('broadcast', { event: 'session_updated' }, (payload) => {
@@ -603,6 +610,58 @@ export const WorkspaceLogin = () => {
     setSession(null);
     setUserCode('');
     setPhoneNumber('');
+    setProfileData(null);
+    setActiveSub(null);
+  };
+
+  const fetchProfileData = async () => {
+    if (!session?.customer_id) return;
+    try {
+      const { data: customer, error: custErr } = await supabase
+        .from('customers')
+        .select('*, subscriptions(*)')
+        .eq('id', session.customer_id)
+        .single();
+      
+      if (!custErr && customer) {
+        setProfileData(customer);
+        const sub = customer.subscriptions?.find((s: any) => s.status === 'Active' && new Date(s.end_date) >= new Date());
+        setActiveSub(sub || null);
+      }
+    } catch (err) {
+      console.error("Profile sync error:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (session?.customer_id) {
+        fetchProfileData();
+    }
+  }, [session?.customer_id]);
+
+  const convertPointsToCashback = async () => {
+    if (!profileData || profileData.loyalty_points < 100) return;
+    setIsConverting(true);
+    try {
+        const pointsToConvert = Math.floor(profileData.loyalty_points / 100) * 100;
+        const rewardAmount = (pointsToConvert / 100) * 40; // 100 points = 40 EGP (500 pts = 200 EGP)
+
+        const { error } = await supabase
+            .from('customers')
+            .update({
+                loyalty_points: (profileData.loyalty_points - pointsToConvert),
+                cashback_balance: ((profileData.cashback_balance || 0) + rewardAmount)
+            } as any)
+            .eq('id', profileData.id);
+
+        if (error) throw error;
+        await fetchProfileData();
+        alert(`تم تحويل ${pointsToConvert} نقطة إلى ${rewardAmount} جنيه كاش باك! ✨`);
+    } catch (err: any) {
+        alert("فشل التحويل: " + err.message);
+    } finally {
+        setIsConverting(false);
+    }
   };
 
   if (session) {
@@ -680,24 +739,35 @@ export const WorkspaceLogin = () => {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[300px] bg-[#f78c2a]/5 rounded-full blur-[150px] pointer-events-none rotate-45" />
 
         {/* TOP PROFILE HEADER */}
-        <div className="relative z-10 pt-8 pb-4 px-6 bg-[#0B0F19]/40 backdrop-blur-2xl border-b border-white/5 flex items-center justify-between animate-in slide-in-from-top-8 duration-700 shadow-xl shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              {/* Animated Ring - Smaller */}
-              <div className="absolute -inset-1 rounded-full border border-[#1e75b9]/30 border-t-[#1e75b9] animate-[spin_4s_linear_infinite]" />
-              <div className="absolute -inset-1 rounded-full border border-[#1ed788]/20 border-b-[#1ed788] animate-[spin_5s_linear_infinite_reverse]" />
+        <div className="relative z-10 pt-8 pb-4 px-6 bg-[#0B0F19]/60 backdrop-blur-3xl border-b border-white/10 flex items-center justify-between animate-in slide-in-from-top-8 duration-700 shadow-2xl shrink-0">
+          <div className="flex items-center gap-5">
+            <div className="relative group">
+              {/* Animated Cyber Ring */}
+              <div className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-indigo-500 via-emerald-400 to-amber-500 opacity-20 group-hover:opacity-100 blur-sm animate-[spin_8s_linear_infinite] transition-opacity" />
+              <div className="absolute -inset-1 rounded-full bg-[#0B0F19] z-10" />
               
-              <div className="w-12 h-12 rounded-full bg-slate-900 border-2 border-[#0B0F19] relative z-20 flex items-center justify-center shadow-[0_0_15px_rgba(30,117,185,0.3)]">
-                <User size={20} className="text-[#1e75b9]" />
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 relative z-20 flex items-center justify-center shadow-2xl overflow-hidden hover:scale-105 transition-transform duration-500">
+                <div className="absolute inset-0 bg-indigo-500/10 animate-pulse" />
+                <User size={24} className="text-indigo-400 relative z-10" />
               </div>
             </div>
             
             <div className="text-right">
-              <h1 className="text-lg font-black text-white leading-tight">
-                أهلاً، <span className="text-[#1ed788]">{session.customers?.full_name?.split(' ')[0] || 'زائرنا'}</span>
+              <p className="text-emerald-400 font-black text-[10px] uppercase tracking-[0.3em] mb-1 opacity-70">Cloud Member</p>
+              <h1 className="text-xl md:text-2xl font-black text-white leading-tight flex items-center gap-2 justify-end">
+                <span>{session.customers?.full_name?.split(' ')[0] || 'المستخدم'}</span>
+                <span className="text-slate-500 font-bold opacity-40">،أهلاً</span>
               </h1>
-              <p className="text-[#f78c2a] font-bold text-[10px] tracking-widest uppercase mt-0.5">{session.user_code}</p>
+              <div className="flex items-center justify-end gap-2 mt-1">
+                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">{session.user_code}</span>
+                 <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+              </div>
             </div>
+          </div>
+
+          <div className="hidden md:flex flex-col items-end opacity-40 hover:opacity-100 transition-opacity">
+             <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Branch Instance</p>
+             <p className="text-[10px] font-black text-white">Main HUB • C-01</p>
           </div>
         </div>
 
@@ -705,17 +775,74 @@ export const WorkspaceLogin = () => {
         <div className="flex-1 overflow-y-auto px-4 pb-28 pt-6 relative z-10 custom-scrollbar">
           {/* TAB CONTENTS */}
           {activeTab === 'session' && (
-            <div className="w-full max-w-lg mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div className="relative group w-full">
-                <div className="absolute inset-0 bg-gradient-to-br from-[#1e75b9] to-[#1ed788] rounded-[2rem] blur opacity-20 transition-opacity" />
-                <div className="bg-[#0B0F19]/80 backdrop-blur-xl border border-white/10 rounded-[2rem] p-8 md:p-10 w-full relative shadow-inner flex flex-col items-center">
-                  <div className="text-sm font-bold text-[#1e75b9] uppercase tracking-widest mb-4">الوقت المنقضي</div>
-                  <div className="text-6xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 font-mono tracking-wider tabular-nums filter drop-shadow-md">
-                    {elapsedTime}
+            <div className="w-full max-w-lg mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-500">
+              
+              {/* Modern Welcome Card */}
+              <div className="relative group mt-2">
+                 <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-emerald-500/10 rounded-[2.5rem] blur-2xl" />
+                 <div className="bg-white/[0.03] backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 relative overflow-hidden flex flex-col items-center group">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl -translate-y-12 translate-x-12" />
+                    <div className="absolute bottom-0 left-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl translate-y-12 -translate-x-12" />
+                    
+                    <div className="w-20 h-20 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-[2rem] flex items-center justify-center text-white shadow-2xl mb-6 group-hover:scale-110 group-hover:rotate-6 transition-all duration-700">
+                       <Sparkles size={40} className="animate-pulse" />
+                    </div>
+                    
+                    <h2 className="text-2xl md:text-3xl font-black text-white text-center leading-tight">
+                       أهلاً بيك في كلاود ☁️ <br/> 
+                       <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-emerald-400">بدأت السيشن بتاعتك بنجاح</span>
+                    </h2>
+                    <p className="text-slate-400 font-bold text-center mt-3 text-sm md:text-base opacity-70">نتمني لك يوم سعيد ومليء بالانتاجية</p>
+                 </div>
+              </div>
+
+              {/* Futuristic Modern Timer */}
+              <div className="relative">
+                <div className="absolute -inset-1 bg-gradient-to-b from-white/10 to-transparent rounded-[3rem] blur-sm" />
+                <div className="bg-slate-900/60 backdrop-blur-2xl border-x border-t border-white/10 rounded-[3rem] p-10 md:p-12 w-full relative shadow-[0_30px_60px_rgba(0,0,0,0.5)] overflow-hidden">
+                  {/* Decorative Elements */}
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-12 bg-indigo-500/20 blur-[60px] rounded-full" />
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-20%,rgba(99,102,241,0.1),transparent)] pointer-events-none" />
+                  
+                  <div className="flex flex-col items-center relative z-10">
+                    <div className="flex items-center gap-3 mb-6">
+                       <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping" />
+                       <span className="text-xs font-black text-indigo-400 uppercase tracking-[0.5em] opacity-80">Active Time Tracking</span>
+                       <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping" />
+                    </div>
+
+                    <div className="relative">
+                       <div className="absolute inset-0 bg-indigo-400/5 blur-3xl rounded-full scale-150" />
+                       <div className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-black text-white font-mono tracking-tighter tabular-nums flex items-baseline filter drop-shadow-[0_0_30px_rgba(255,255,255,0.15)] leading-none">
+                          {elapsedTime}
+                       </div>
+                    </div>
+
+                    <div className="flex items-center gap-8 mt-10 w-full pt-8 border-t border-white/5">
+                       <div className="flex-1 text-center border-r border-white/5">
+                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Start Time</p>
+                          <p className="text-sm font-black text-white">{new Date(session.start_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</p>
+                       </div>
+                       <div className="flex-1 text-center">
+                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Session Status</p>
+                          <div className="flex items-center justify-center gap-2">
+                             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                             <span className="text-sm font-black text-emerald-500">Live Session</span>
+                          </div>
+                       </div>
+                    </div>
                   </div>
+
                   {session.status === 'checkout_requested' && (
-                    <div className="mt-8 text-white font-bold bg-[#f78c2a] px-6 py-3 rounded-xl shadow-[0_0_20px_rgba(247,140,42,0.4)] animate-pulse w-full text-center">
-                      بإنتظار موافقة ال Admin علي هذا الطلب يرجي التوجه لدفع الحساب
+                    <div className="mt-8 relative animate-in zoom-in-95 duration-500">
+                       <div className="absolute inset-0 bg-amber-500/20 blur-xl rounded-2xl" />
+                       <div className="relative bg-amber-500/10 border border-amber-500/30 text-amber-500 font-bold p-5 rounded-2xl shadow-2xl backdrop-blur-md text-center">
+                          <div className="flex items-center justify-center gap-2 mb-2">
+                             <RefreshCw className="animate-spin" size={20} />
+                             <span className="text-lg font-black uppercase tracking-tight">إنتظار التأكيد</span>
+                          </div>
+                          <p className="text-sm leading-relaxed opacity-80">يرجى التوجه لمكتب الاستقبال لسداد الحساب وإتمام المغادرة</p>
+                       </div>
                     </div>
                   )}
                 </div>
@@ -1150,9 +1277,132 @@ export const WorkspaceLogin = () => {
             </div>
           )}
 
+          {activeTab === 'profile' && (
+            <div className="w-full max-w-lg mx-auto space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-500 pb-20">
+               {/* Points & Cashback Dashboard */}
+               <div className="grid grid-cols-2 lg:grid-cols-2 gap-3 md:gap-4 overflow-visible">
+                  <div className="bg-gradient-to-br from-indigo-600 to-indigo-900 p-5 md:p-6 rounded-[2rem] md:rounded-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden group">
+                     <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl -translate-y-8 translate-x-8" />
+                     <Zap className="text-white opacity-20 absolute bottom-4 left-4 group-hover:scale-125 transition-transform" size={32} md:size={40} />
+                     <p className="text-[9px] md:text-[10px] font-black text-indigo-200 uppercase tracking-widest mb-1 text-right">نقاط الولاء</p>
+                     <h3 className="text-2xl md:text-3xl font-black text-white text-right font-mono">{profileData?.loyalty_points || 0}</h3>
+                     <p className="text-[8px] md:text-[9px] font-bold text-indigo-300 text-right mt-1">5 نقاط لكل ساعة</p>
+                  </div>
+                  <div className="bg-gradient-to-br from-emerald-600 to-emerald-900 p-5 md:p-6 rounded-[2rem] md:rounded-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden group">
+                     <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl -translate-y-8 translate-x-8" />
+                     <CreditCard className="text-white opacity-20 absolute bottom-4 left-4 group-hover:scale-125 transition-transform" size={32} md:size={40} />
+                     <p className="text-[9px] md:text-[10px] font-black text-emerald-200 uppercase tracking-widest mb-1 text-right">رصيد الكاش باك</p>
+                     <h3 className="text-2xl md:text-3xl font-black text-white text-right font-mono">
+                        {profileData?.cashback_balance || 0} 
+                        <span className="text-xs ml-1 opacity-50">EGP</span>
+                     </h3>
+                     <p className="text-[8px] md:text-[9px] font-bold text-emerald-300 text-right mt-1">رصيد متاح للاستخدام</p>
+                  </div>
+               </div>
+
+               {/* Points Conversion Card */}
+               {profileData?.loyalty_points >= 100 && (
+                 <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-6 flex items-center justify-between gap-4 backdrop-blur-xl group hover:border-indigo-500/50 transition-all">
+                    <div className="text-right">
+                       <h4 className="font-black text-white text-sm">حول نقاطك إلى نقود</h4>
+                       <p className="text-[10px] font-bold text-slate-500">كل 100 نقطة = 40 جنيه كاش باك</p>
+                    </div>
+                    <button 
+                       onClick={convertPointsToCashback}
+                       disabled={isConverting}
+                       className="h-12 px-6 bg-indigo-600 text-white rounded-2xl font-black text-xs hover:bg-indigo-500 active:scale-95 transition-all shadow-lg shadow-indigo-900/40 disabled:opacity-50"
+                    >
+                       {isConverting ? <RefreshCw className="animate-spin" /> : 'تحويل الآن ✨'}
+                    </button>
+                 </div>
+               )}
+
+               {/* Subscription Section */}
+               <div className="space-y-4">
+                  <div className="flex items-center justify-between px-2">
+                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">إدارة الاشتراك</p>
+                     <Sparkles size={14} className="text-amber-400" />
+                  </div>
+                  
+                  {activeSub ? (
+                    <div className="bg-slate-900 border border-white/10 rounded-[2.5rem] p-8 space-y-8 relative overflow-hidden group">
+                       <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-transparent pointer-events-none" />
+                       <div className="flex flex-row-reverse justify-between items-center group-hover:px-2 transition-all">
+                          <div className="text-right">
+                             <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-black px-3 py-1 rounded-lg uppercase tracking-tighter mb-2 inline-block">Active Plan</span>
+                             <h4 className="text-2xl font-black text-white">{activeSub.type}</h4>
+                             <p className="text-slate-500 text-xs font-bold mt-1 tracking-wide">ينتهي في: {new Date(activeSub.end_date).toLocaleDateString('ar-EG')}</p>
+                          </div>
+                          <div className="w-16 h-16 bg-white/5 rounded-3xl flex items-center justify-center text-white ring-1 ring-white/10 group-hover:rotate-12 transition-transform">
+                             <Clock size={32} />
+                          </div>
+                       </div>
+                       
+                       <div className="space-y-3 pt-4 border-t border-white/5">
+                          <div className="flex flex-row-reverse justify-between text-xs font-black">
+                             <span className="text-slate-400 uppercase tracking-widest">المتبقي من الساعات</span>
+                             <span className="text-white">{(activeSub.total_hours - activeSub.used_hours).toFixed(1)} / {activeSub.total_hours}H</span>
+                          </div>
+                          <div className="h-3 bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/5">
+                             <div 
+                                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full transition-all duration-1000"
+                                style={{ width: `${Math.max(5, (1 - (activeSub.used_hours / activeSub.total_hours)) * 100)}%` }}
+                             />
+                          </div>
+                       </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white/5 border-2 border-dashed border-white/5 rounded-[2.5rem] p-12 text-center space-y-4 opacity-50">
+                       <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto text-slate-500">
+                          <CreditCard size={28} />
+                       </div>
+                       <div>
+                          <p className="font-black text-white">لا يوجد اشتراك مفعل</p>
+                          <p className="text-xs font-bold text-slate-500">اشترك الآن لتوفير أكثر من 40% من تكلفة الساعة</p>
+                       </div>
+                    </div>
+                  )}
+               </div>
+
+                {/* Profile Info & Account Settings */}
+                <div className="space-y-4">
+                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-4">معلومات الحساب</p>
+                   <div className="bg-white/5 border border-white/10 rounded-[2rem] md:rounded-[2.5rem] overflow-hidden divide-y divide-white/5">
+                      <div className="p-5 md:p-6 flex flex-row-reverse items-center justify-between hover:bg-white/[0.02] transition-colors">
+                         <div className="flex flex-row-reverse items-center gap-4">
+                            <div className="w-10 h-10 bg-slate-800/80 rounded-xl flex items-center justify-center text-indigo-400 ring-1 ring-white/5"><User size={18} /></div>
+                            <div className="text-right">
+                               <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Full Name</p>
+                               <p className="text-sm md:text-base font-black text-white">{profileData?.full_name}</p>
+                            </div>
+                         </div>
+                         <PenTool size={14} className="text-slate-600 opacity-50" />
+                      </div>
+                      <div className="p-5 md:p-6 flex flex-row-reverse items-center justify-between hover:bg-white/[0.02] transition-colors">
+                         <div className="flex flex-row-reverse items-center gap-4">
+                            <div className="w-10 h-10 bg-slate-800/80 rounded-xl flex items-center justify-center text-emerald-400 ring-1 ring-white/5"><Phone size={18} /></div>
+                            <div className="text-right">
+                               <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Mobile Number</p>
+                               <p className="text-sm md:text-base font-black text-white" dir="ltr">{profileData?.phone?.startsWith('0') ? '' : '0'}{profileData?.phone}</p>
+                            </div>
+                         </div>
+                      </div>
+                      <div className="p-5 md:p-6 flex flex-row-reverse items-center justify-between hover:bg-white/[0.02] transition-colors">
+                         <div className="flex flex-row-reverse items-center gap-4">
+                            <div className="w-10 h-10 bg-slate-800/80 rounded-xl flex items-center justify-center text-amber-400 ring-1 ring-white/5"><Info size={18} /></div>
+                            <div className="text-right">
+                               <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Login Code</p>
+                               <p className="text-sm md:text-base font-black text-white font-mono tracking-widest">{profileData?.code}</p>
+                            </div>
+                         </div>
+                      </div>
+                   </div>
+                </div>
+             </div>
+          )}
           {activeTab === 'about' && (
             <div className="w-full max-w-lg mx-auto flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8 pb-20">
-              <div className="bg-[#0B0F19]/60 backdrop-blur-3xl border border-white/5 p-10 md:p-12 rounded-[2.5rem] relative overflow-hidden shadow-2xl text-right">
+               <div className="bg-[#0B0F19]/60 backdrop-blur-3xl border border-white/5 p-10 md:p-12 rounded-[2.5rem] relative overflow-hidden shadow-2xl text-right">
                 <div className="absolute top-0 left-0 w-64 h-64 bg-[#1e75b9]/20 rounded-full blur-[100px] -translate-x-12 -translate-y-12" />
                 <div className="absolute bottom-0 right-0 w-64 h-64 bg-[#1ed788]/10 rounded-full blur-[80px] translate-x-20 translate-y-20" />
                 
@@ -1229,12 +1479,12 @@ export const WorkspaceLogin = () => {
           )}
         </div>
 
-        {/* BOTTOM NAVIGATION BAR */}
         <div className="absolute bottom-0 left-0 right-0 h-20 bg-[#0B0F19]/90 backdrop-blur-3xl border-t border-white/10 z-50 px-4 md:px-0 flex justify-center pb-safe">
           <div className="w-full max-w-md h-full flex justify-between items-center px-2">
             {[
               { id: 'session', icon: Clock, label: 'الرئيسية' },
               { id: 'catering', icon: ShoppingBag, label: 'المتجر', action: fetchStoreItems },
+              { id: 'profile', icon: User, label: 'بروفايلي' },
               { id: 'about', icon: Info, label: 'من نحن' },
               { id: 'how_work', icon: HelpCircle, label: 'الأسئلة' }
             ].map(tab => {
@@ -1247,8 +1497,8 @@ export const WorkspaceLogin = () => {
                     isActive ? 'text-[#1ed788]' : 'text-slate-500 hover:text-slate-300'
                   }`}
                 >
-                  <tab.icon size={isActive ? 24 : 20} className={`transition-all ${isActive ? 'mb-1 drop-shadow-[0_0_8px_rgba(30,215,136,0.8)] scale-110' : ''}`} />
-                  <span className={`text-[10px] lg:text-xs font-bold ${isActive ? 'opacity-100' : 'opacity-70'}`}>{tab.label}</span>
+                  <tab.icon size={isActive ? 20 : 18} className={`transition-all ${isActive ? 'mb-1 drop-shadow-[0_0_8px_rgba(30,215,136,0.8)] scale-110' : ''}`} />
+                  <span className={`text-[9px] font-bold ${isActive ? 'opacity-100' : 'opacity-70'}`}>{tab.label}</span>
                   {isActive && (
                     <div className="absolute top-0 w-8 h-1 bg-[#1ed788] rounded-b-full shadow-[0_4px_10px_rgba(30,215,136,0.5)]" />
                   )}
@@ -1603,55 +1853,69 @@ export const WorkspaceLogin = () => {
         </Modal>
       )}
 
-      {/* Registration Success Modal */}
       <Modal
         isOpen={showSuccessModal && !!regSuccessData}
         onClose={() => setShowSuccessModal(false)}
-        title="تم التسجيل بنجاح! 🎉"
-        className="max-w-md p-0 overflow-hidden bg-transparent border-none shadow-none"
+        className="max-w-md md:max-w-lg p-0 overflow-visible bg-transparent border-none shadow-none"
       >
-        <div className="bg-[#0B0F19] rounded-[3.5rem] p-10 text-center space-y-10 border border-white/10 relative overflow-hidden shadow-2xl scale-110">
-          {/* Animated Background Orbs */}
-          <div className="absolute -top-24 -right-24 w-64 h-64 bg-emerald-500/10 rounded-full blur-[80px] -z-10 animate-pulse" />
-          <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-indigo-500/10 rounded-full blur-[80px] -z-10" />
+        <div className="bg-[#0B0F19] rounded-[2.5rem] md:rounded-[3.5rem] p-6 md:p-10 text-center space-y-6 md:space-y-10 border border-white/10 relative overflow-hidden shadow-2xl animate-in zoom-in-95 duration-500">
+          {/* High-End Background Effects */}
+          <div className="absolute -top-32 -right-32 w-80 h-80 bg-emerald-500/20 rounded-full blur-[100px] pointer-events-none" />
+          <div className="absolute -bottom-32 -left-32 w-80 h-80 bg-indigo-500/15 rounded-full blur-[100px] pointer-events-none" />
           
-          <div className="w-24 h-24 bg-emerald-500/10 rounded-3xl flex items-center justify-center mx-auto text-[#1ed788] animate-bounce shadow-inner border border-emerald-500/20">
-             <CheckCircle2 size={48} />
+          <div className="relative z-10 w-20 h-20 md:w-24 md:h-24 bg-gradient-to-br from-emerald-500/20 to-emerald-500/5 rounded-3xl flex items-center justify-center mx-auto text-[#1ed788] animate-bounce shadow-[0_0_50px_rgba(30,215,136,0.1)] border border-emerald-500/20">
+             <CheckCircle2 size={40} md:size={48} />
           </div>
 
-          <div className="space-y-3">
-             <h2 className="text-4xl font-black text-white tracking-tight leading-tight">مرحباً بك في Cloud!</h2>
-             <p className="text-slate-400 font-bold text-lg px-8">
-               أهلاً بك <span className="text-emerald-400">{regSuccessData?.name}</span>. لقد تم إنشاء حسابك بنجاح.
+          <div className="relative z-10 space-y-4">
+             <h2 className="text-3xl md:text-5xl font-black text-white tracking-tighter leading-tight drop-shadow-sm">مرحباً بك في كلاود! ✨</h2>
+             <p className="text-slate-400 font-bold text-sm md:text-lg px-4 md:px-8 leading-relaxed">
+               أهلاً بك <span className="text-emerald-400 font-black">{regSuccessData?.name}</span>. تم تأكيد حسابك بنجاح وجاهز لبدء أول جلسة عمل لك.
              </p>
           </div>
 
-          <div className="relative group p-10 bg-white/5 backdrop-blur-xl rounded-[2.5rem] border border-white/10 overflow-hidden">
-             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl -z-10" />
+          <div className="relative z-10 group p-6 md:p-10 bg-white/[0.03] backdrop-blur-3xl rounded-[2rem] md:rounded-[2.5rem] border border-white/10 overflow-hidden shadow-inner translate-y-2">
+             <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/5 to-transparent pointer-events-none" />
              <div className="space-y-4">
-                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.4em] mb-2">كود الدخول الخاص بك</p>
-                <div className="bg-black/40 py-8 px-6 rounded-[2rem] border-2 border-dashed border-indigo-500/30">
-                   <span className="text-6xl font-black text-white font-mono tracking-[0.2em]">{regSuccessData?.code}</span>
+                <div className="flex items-center justify-center gap-3 mb-2">
+                   <div className="h-px w-8 bg-indigo-500/30" />
+                   <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] whitespace-nowrap">Your Access ID</p>
+                   <div className="h-px w-8 bg-indigo-500/30" />
                 </div>
-                <div className="flex items-center gap-4 text-right bg-indigo-500/10 p-4 rounded-2xl border border-indigo-500/20">
-                   <Info size={20} className="text-indigo-400 shrink-0" />
-                   <p className="text-[11px] font-black text-slate-300 leading-relaxed">
-                     يرجى أخذ لقطة شاشة (Screenshot) لهذا الكود. ستستخدمه في كل مرة تدخل فيها مساحة العمل.
+                
+                <div className="bg-black/30 py-6 md:py-10 px-4 rounded-[1.5rem] md:rounded-[2rem] border-2 border-dashed border-indigo-500/20 relative group-hover:border-indigo-500/40 transition-colors">
+                   <span className="text-5xl md:text-7xl font-black text-white font-mono tracking-[0.15em] drop-shadow-2xl">
+                     {regSuccessData?.code}
+                   </span>
+                   {/* Glow effect */}
+                   <div className="absolute inset-0 bg-indigo-500/5 blur-xl group-hover:bg-indigo-500/10 transition-all opacity-0 group-hover:opacity-100" />
+                </div>
+
+                <div className="flex items-start gap-4 text-right bg-white/5 p-4 md:p-5 rounded-2xl border border-white/5">
+                   <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5">
+                      <Sparkles size={16} />
+                   </div>
+                   <p className="text-[10px] md:text-[11px] font-black text-slate-400 leading-relaxed">
+                      يرجى تصوير الشاشة (Screenshot) الآن. ستستخدم هذا البروفايل والكود في كل مرة تدخل فيها مساحة العمل.
                    </p>
                 </div>
              </div>
           </div>
 
-          <button
-            onClick={() => {
-              setShowSuccessModal(false);
-              setUserCode(regSuccessData?.code || '');
-              setIsSignUp(false);
-            }}
-            className="w-full h-20 bg-white text-[#0B0F19] rounded-[2rem] font-black text-2xl hover:bg-emerald-400 transition-all shadow-2xl active:scale-95 group"
-          >
-            ابدأ رحلتك الآن
-          </button>
+          <div className="relative z-10 pt-4">
+            <button
+              onClick={() => {
+                setShowSuccessModal(false);
+                setUserCode(regSuccessData?.code || '');
+                setIsSignUp(false);
+              }}
+              className="w-full h-16 md:h-20 bg-white hover:bg-emerald-400 text-[#0B0F19] rounded-[1.5rem] md:rounded-[2rem] font-black text-lg md:text-2xl transition-all shadow-[0_20px_60px_rgba(0,0,0,0.3)] active:scale-95 group flex items-center justify-center gap-3 overflow-hidden relative"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] pointer-events-none" />
+              <span>تسجيل الدخول وبدء العمل</span>
+              <ArrowRight size={24} className="group-hover:translate-x-[-8px] transition-transform" />
+            </button>
+          </div>
         </div>
       </Modal>
     </div>
