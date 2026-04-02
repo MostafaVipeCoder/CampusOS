@@ -150,6 +150,11 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     }
   };
 
+  const handleManualPause = async (session: any) => {
+    if (!confirm('هل تريد إيقاف الوقت لهذه الجلسة يدوياً؟')) return;
+    handleApprovePause(session);
+  };
+
   const handleApproveResume = async (session: any) => {
     try {
         const now = new Date();
@@ -194,8 +199,9 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
       ? new Date(session.end_time) 
       : new Date();
     const startTime = new Date(session.start_time);
+    const totalPausedMins = Number(session.total_paused_minutes) || 0;
     const diffMs = endTime.getTime() - startTime.getTime();
-    const diffMinutes = Math.max(1, Math.ceil(diffMs / 60000));
+    const diffMinutes = Math.max(1, Math.ceil(diffMs / 60000) - totalPausedMins);
     const usedHours = parseFloat((diffMinutes / 60).toFixed(2));
 
     // Check for Active Subscription
@@ -205,19 +211,19 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
         s.used_hours < s.total_hours
     );
 
-    let workspaceAmount = calculateSessionPrice(diffMinutes);
+    let workspaceAmount = calculateSessionPrice(diffMinutes) || 0;
     let isSubscribed = false;
     let remainingSubHours = 0;
 
     if (activeSub) {
         isSubscribed = true;
         workspaceAmount = 0; 
-        remainingSubHours = activeSub.total_hours - activeSub.used_hours;
+        remainingSubHours = Number(activeSub.total_hours) - Number(activeSub.used_hours);
     }
     
     const orders = Array.isArray(session.orders) ? [...session.orders] : [];
-    const cateringAmount = orders.reduce((sum, o) => sum + (Number(o.price) * (Number(o.quantity) || 1)), 0);
-    const totalAmount = workspaceAmount + cateringAmount;
+    const cateringAmount = orders.reduce((sum, o) => sum + ((Number(o.price) || 0) * (Number(o.quantity) || 1)), 0);
+    const totalAmount = (Number(workspaceAmount) || 0) + (Number(cateringAmount) || 0);
 
     setEditingBill({
       ...session,
@@ -240,14 +246,14 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
   const handleUpdateTime = (field: 'startTime' | 'endTime', value: string) => {
     if (!editingBill) return;
     
-    // Convert local input strings directly to ISO
     const startTime = field === 'startTime' ? fromCairoInput(value) : editingBill.startTime;
     const endTime = field === 'endTime' ? fromCairoInput(value) : editingBill.endTime;
     
     if (!startTime || !endTime) return;
 
+    const totalPausedMins = Number(editingBill.total_paused_minutes) || 0;
     const diffMs = new Date(endTime).getTime() - new Date(startTime).getTime();
-    const diffMinutes = Math.max(1, Math.ceil(diffMs / 60000));
+    const diffMinutes = Math.max(1, Math.ceil(diffMs / 60000) - totalPausedMins);
     const usedHours = parseFloat((diffMinutes / 60).toFixed(2));
 
     let workspaceAmount = 0;
@@ -255,12 +261,13 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
 
     if (editingBill.isSubscribed) {
        workspaceAmount = 0;
-       remainingSubHours = editingBill.initialRemaining - usedHours;
+       remainingSubHours = Number(editingBill.initialRemaining) - usedHours;
     } else {
-       workspaceAmount = calculateSessionPrice(diffMinutes);
+       workspaceAmount = calculateSessionPrice(diffMinutes) || 0;
     }
 
-    const totalAmount = workspaceAmount + editingBill.cateringAmount;
+    const cateringAmount = Number(editingBill.cateringAmount) || 0;
+    const totalAmount = Number(workspaceAmount) + cateringAmount;
 
     setEditingBill({
        ...editingBill,
@@ -279,8 +286,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     const newOrders = [...editingBill.orders];
     newOrders[index] = { ...newOrders[index], [field]: value };
     
-    const newCateringAmount = newOrders.reduce((sum, o) => sum + (Number(o.price) * (Number(o.quantity) || 1)), 0);
-    const newTotalAmount = parseFloat((Number(editingBill.workspaceAmount) + newCateringAmount).toFixed(2));
+    const newCateringAmount = newOrders.reduce((sum, o) => sum + ((Number(o.price) || 0) * (Number(o.quantity) || 1)), 0);
+    const newTotalAmount = parseFloat(((Number(editingBill.workspaceAmount) || 0) + newCateringAmount).toFixed(2));
     
     setEditingBill({
       ...editingBill,
@@ -293,8 +300,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
   const handleRemoveBillItem = (index: number) => {
     if (!editingBill) return;
     const newOrders = editingBill.orders.filter((_: any, i: number) => i !== index);
-    const newCateringAmount = newOrders.reduce((sum, o) => sum + (Number(o.price) * (Number(o.quantity) || 1)), 0);
-    const newTotalAmount = parseFloat((Number(editingBill.workspaceAmount) + newCateringAmount).toFixed(2));
+    const newCateringAmount = newOrders.reduce((sum, o) => sum + ((Number(o.price) || 0) * (Number(o.quantity) || 1)), 0);
+    const newTotalAmount = parseFloat(((Number(editingBill.workspaceAmount) || 0) + newCateringAmount).toFixed(2));
     
     setEditingBill({
       ...editingBill,
@@ -312,8 +319,11 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
 
   const handleAcceptCheckout = async () => {
     if (!editingBill) return;
+    setLoading(true);
     try {
-      // 1. Update the session record
+      if (!editingBill.id) throw new Error("Missing Session ID");
+
+      // 1. Update the session record first
       const { error: sessionError } = await supabase
         .from('workspace_sessions')
         .update({
@@ -331,7 +341,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
 
       if (sessionError) {
           console.error('Session Update Error:', sessionError);
-          throw sessionError;
+          throw new Error(`Failed to update session: ${sessionError.message}`);
       }
 
       // 2. Adjust Subscription Balance if applicable
@@ -395,8 +405,13 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
       const { error: sessionError } = await supabase
         .from('workspace_sessions')
         .update({
+          start_time: editingBill.startTime,
+          end_time: editingBill.endTime,
+          total_minutes: Number(editingBill.diffMinutes) || 0,
           orders: editingBill.orders || [],
-          catering_amount: Number(editingBill.cateringAmount) || 0
+          catering_amount: Number(editingBill.cateringAmount) || 0,
+          total_amount: Number(editingBill.totalAmount) || 0,
+          notes: editingBill.notes || ''
         })
         .eq('id', editingBill.id);
 
@@ -420,25 +435,27 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     }
   };
 
-  const handleCancelCheckoutRequest = async (sessionId: string) => {
+  const handleCancelCheckoutRequest = async (session: any) => {
     try {
+      setLoading(true);
+      const targetStatus = session.is_paused ? 'paused' : 'active';
+      
       const { error } = await supabase
         .from('workspace_sessions')
-        .update({ status: 'active', end_time: null })
-        .eq('id', sessionId);
+        .update({ 
+            status: targetStatus,
+            end_time: null 
+        })
+        .eq('id', session.id);
 
       if (error) throw error;
+      setEditingBill(null);
+      alert("تم إلغاء طلب الخروج وإعادة الجلسة للحالة النشطة");
       fetchSessions();
-
-      // Broadcast to user to resume counter
-      supabase.channel(`workspace_session_${sessionId}`).send({
-        type: 'broadcast',
-        event: 'session_updated',
-        payload: { id: sessionId, status: 'active', end_time: null }
-      });
     } catch (err: any) {
-      alert('حدث خطأ أثناء إلغاء طلب الخروج');
-      console.error(err);
+      alert('خطأ في إلغاء الطلب: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -446,7 +463,6 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     if (!manualCode.trim()) return;
     setStartingSession(true);
     try {
-      // 1. Check if an active session already exists for this code
       const { data: existing } = await supabase
         .from('workspace_sessions')
         .select('id')
@@ -459,14 +475,12 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
         return;
       }
 
-      // 2. Fetch customer if exists
       const { data: customer } = await supabase
         .from('customers')
         .select('id, full_name, phone')
         .eq('code', manualCode.trim().toUpperCase())
         .maybeSingle();
 
-      // 3. Create session
       const { error } = await supabase
         .from('workspace_sessions')
         .insert({
@@ -498,12 +512,12 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     <div className="space-y-12 animate-in fade-in duration-700 mt-6 pb-20">
 
       {/* Manual Entry Section */}
-      <div className="glass rounded-[2rem] md:rounded-[3rem] p-6 md:p-8 overflow-hidden relative group">
+      <div className="glass rounded-[2rem] md:rounded-[3rem] p-6 md:p-10 overflow-hidden relative group">
         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-[80px] -z-10" />
-        <div className="flex flex-col lg:flex-row items-center gap-6 md:gap-8">
+        <div className="flex flex-col lg:flex-row items-center gap-6 md:gap-10">
           <div className="flex-1 text-center lg:text-right space-y-2">
-            <h2 className="text-xl md:text-2xl font-black text-slate-800">بدء جلسة يدوياً</h2>
-            <p className="text-slate-400 font-bold text-xs md:text-sm">أدخل كود المستخدم (مثال: A001) أو كود الزائر (مثال: NA1)</p>
+            <h2 className="text-xl md:text-3xl font-black text-slate-800 tracking-tighter">بدء جلسة يدوياً</h2>
+            <p className="text-slate-400 font-bold text-[10px] md:text-sm uppercase tracking-widest">Manual Start • Guest or Registered User</p>
           </div>
           <div className="flex flex-col sm:flex-row w-full lg:w-auto items-center gap-4">
             <div className="relative w-full sm:w-64 group/input">
@@ -512,16 +526,16 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value)}
                 placeholder="A001 , NA1 ..."
-                className="w-full h-14 md:h-16 px-6 rounded-2xl bg-white border-2 border-slate-100 font-black text-lg md:text-xl text-center focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 transition-all outline-none uppercase placeholder:text-slate-200"
+                className="w-full h-16 md:h-20 px-8 rounded-2xl bg-white border-2 border-slate-100 font-black text-xl md:text-2xl text-center focus:border-indigo-500 focus:ring-8 focus:ring-indigo-100 transition-all outline-none uppercase placeholder:text-slate-200 shadow-inner"
                 onKeyDown={(e) => e.key === 'Enter' && handleStartManualSession()}
               />
             </div>
             <button 
               onClick={handleStartManualSession}
               disabled={startingSession || !manualCode.trim()}
-              className="w-full sm:w-auto h-14 md:h-16 px-8 bg-indigo-600 text-white rounded-2xl font-black text-sm md:text-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3 whitespace-nowrap"
+              className="w-full sm:w-auto h-16 md:h-20 px-10 bg-slate-900 text-white rounded-2xl font-black text-sm md:text-lg hover:bg-black disabled:opacity-50 disabled:cursor-not-allowed shadow-2xl shadow-indigo-100 transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3 whitespace-nowrap"
             >
-              {startingSession ? <RefreshCw className="animate-spin" size={20} /> : <Clock size={20} />}
+              {startingSession ? <RefreshCw className="animate-spin" size={24} /> : <Plus size={24} />}
               <span>بدء الجلسة</span>
             </button>
           </div>
@@ -596,7 +610,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                   const currentRefTime = session.is_paused ? new Date(session.last_pause_start).getTime() : now;
                   const totalPausedMs = (Number(session.total_paused_minutes) || 0) * 60000;
                   const diffMs = Math.max(0, currentRefTime - start - totalPausedMs);
-                  const totalMins = Math.floor(diffMs / 60000);
+                  const totalMins = isNaN(diffMs) ? 0 : Math.floor(diffMs / 60000);
                   const hrs = Math.floor(totalMins / 60);
                   const mins = totalMins % 60;
                   
@@ -682,43 +696,53 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                       </td>
                       <td className="py-6 px-6">
                         <div className="flex items-center gap-2">
-                             <button 
-                               onClick={() => handlePrepareCheckout(session)}
-                               className="p-3 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-2xl transition-all"
-                               title="Checkout"
-                             >
-                               <Receipt size={20} />
-                             </button>
-                             
-                             {session.status === 'pause_requested' && (
-                                <button 
-                                  onClick={() => handleApprovePause(session)}
-                                  className="p-3 bg-amber-500 text-white hover:bg-amber-600 rounded-2xl transition-all animate-bounce shadow-lg shadow-amber-500/30"
-                                  title="Approve Pause"
-                                >
-                                  <Lock size={20} />
-                                </button>
-                             )}
+                              <button 
+                                onClick={() => handlePrepareCheckout(session)}
+                                className={`p-4 rounded-2xl transition-all shadow-sm ${session.status === 'checkout_requested' ? 'bg-rose-600 text-white animate-pulse shadow-rose-200' : 'bg-slate-900 text-white hover:bg-black shadow-slate-100'}`}
+                                title="إنهاء ومحاسبة"
+                              >
+                                <Receipt size={22} className={session.status === 'checkout_requested' ? 'animate-bounce' : ''} />
+                              </button>
+                              
+                              {session.status === 'pause_requested' && (
+                                 <button 
+                                   onClick={() => handleApprovePause(session)}
+                                   className="p-4 bg-amber-500 text-white hover:bg-amber-600 rounded-2xl transition-all animate-bounce shadow-lg shadow-amber-500/30"
+                                   title="تأكيد طلب الإيقاف"
+                                 >
+                                   <Lock size={22} />
+                                 </button>
+                              )}
 
-                             {session.status === 'resume_requested' && (
-                                <button 
-                                  onClick={() => handleApproveResume(session)}
-                                  className="p-3 bg-emerald-500 text-white hover:bg-emerald-600 rounded-2xl transition-all animate-bounce shadow-lg shadow-emerald-500/30"
-                                  title="Approve Resume"
-                                >
-                                  <RefreshCw size={20} />
-                                </button>
-                             )}
+                              {session.status === 'active' && (
+                                 <button 
+                                   onClick={() => handleManualPause(session)}
+                                   className="p-4 bg-amber-100 text-amber-600 hover:bg-amber-200 rounded-2xl transition-all"
+                                   title="إيقاف الوقت يدوياً"
+                                 >
+                                   <Lock size={22} />
+                                 </button>
+                              )}
 
-                             {session.status === 'paused' && (
-                                <button 
-                                  onClick={() => handleApproveResume(session)}
-                                  className="p-3 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-2xl transition-all"
-                                  title="Manual Resume"
-                                >
-                                  <Plus size={20} />
-                                </button>
-                             )}
+                              {session.status === 'resume_requested' && (
+                                 <button 
+                                   onClick={() => handleApproveResume(session)}
+                                   className="p-4 bg-emerald-500 text-white hover:bg-emerald-600 rounded-2xl transition-all animate-bounce shadow-lg shadow-emerald-500/30"
+                                   title="تأكيد طلب الاستئناف"
+                                 >
+                                   <RefreshCw size={22} />
+                                 </button>
+                              )}
+
+                              {session.status === 'paused' && (
+                                 <button 
+                                   onClick={() => handleApproveResume(session)}
+                                   className="p-4 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-2xl transition-all border border-emerald-100"
+                                   title="استئناف يدوياً"
+                                 >
+                                   <RefreshCw size={22} />
+                                 </button>
+                              )}
                         </div>
                       </td>
                     </tr>
@@ -797,33 +821,61 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between gap-4 pt-4 border-t border-slate-100">
-                    <div className="text-right">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">الكافتيريا</p>
-                      <p className="font-black text-slate-900 text-lg">{session.catering_amount || 0} <span className="text-[10px] opacity-40">EGP</span></p>
-                    </div>
-                    <div className="flex flex-col gap-2 flex-1">
-                      <button
-                        onClick={() => handlePrepareCheckout(session)}
-                        className={`w-full py-3 px-4 rounded-2xl text-white font-black text-sm transition-all shadow-lg active:scale-95 ${
-                          session.status === 'checkout_requested' 
-                            ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' 
-                            : 'bg-slate-900 hover:bg-black shadow-slate-900/20'
-                        }`}
-                      >
-                        إنهاء و محاسبة
-                      </button>
-                      {session.status === 'checkout_requested' && (
-                        <button
-                          onClick={() => handleCancelCheckoutRequest(session.id)}
-                          className="w-full py-2 text-rose-500 bg-rose-50 rounded-xl text-[10px] font-black transition-colors"
-                        >
-                          إلغاء طلب الخروج
-                        </button>
-                      )}
+                    <div className="flex flex-wrap gap-2 pt-2">
+                       {/* Control Buttons Grid */}
+                       <div className="grid grid-cols-2 gap-2 w-full">
+                          <button
+                            onClick={() => handlePrepareCheckout(session)}
+                            className={`h-16 rounded-2xl text-white font-black text-sm transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 ${
+                              session.status === 'checkout_requested' 
+                                ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-200 animate-pulse col-span-2' 
+                                : 'bg-slate-900 hover:bg-black shadow-slate-900/20 col-span-1'
+                            }`}
+                          >
+                            <Receipt size={18} />
+                            <span className="text-[11px]">{session.status === 'checkout_requested' ? 'إنهاء ومحاسبة فوراً' : 'إنهاء'}</span>
+                          </button>
+
+                          {(session.status === 'active' || session.status === 'pause_requested') && (
+                             <button 
+                               onClick={() => session.status === 'pause_requested' ? handleApprovePause(session) : handleManualPause(session)}
+                               className={`h-16 rounded-2xl font-black text-sm transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 ${
+                                 session.status === 'pause_requested' 
+                                   ? 'bg-amber-500 text-white animate-bounce shadow-amber-200 col-span-1' 
+                                   : 'bg-amber-50 text-amber-600 border border-amber-100 col-span-1'
+                               }`}
+                             >
+                               <Lock size={18} />
+                               <span className="text-[11px]">إيقاف</span>
+                             </button>
+                          )}
+
+                          {(session.status === 'paused' || session.status === 'resume_requested') && (
+                             <button 
+                               onClick={() => handleApproveResume(session)}
+                               className={`h-16 rounded-2xl font-black text-sm transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 ${
+                                 session.status === 'resume_requested' 
+                                   ? 'bg-emerald-500 text-white animate-bounce shadow-emerald-200 col-span-1' 
+                                   : 'bg-emerald-50 text-emerald-600 border border-emerald-100 col-span-1'
+                               }`}
+                             >
+                               <RefreshCw size={18} />
+                               <span className="text-[11px]">استئناف</span>
+                             </button>
+                          )}
+                          
+                          {session.status === 'checkout_requested' && (
+                             <button
+                               onClick={() => handleCancelCheckoutRequest(session)}
+                               className="col-span-2 py-4 text-rose-500 bg-rose-50 rounded-2xl text-[11px] font-black transition-colors flex items-center justify-center gap-2 border border-rose-100"
+                             >
+                               <X size={14} />
+                               إلغاء طلب الخروج
+                             </button>
+                          )}
+                       </div>
                     </div>
                   </div>
-                </div>
               );
             })}
 
@@ -1021,24 +1073,45 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
 
               <div className="mt-8 pt-8 border-t border-slate-100">
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-8 text-center sm:text-right">
-                    <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1">الإجمالي المستحق</p>
-                      <div className="flex items-center justify-center sm:justify-end gap-2">
-                        <span className="text-5xl font-black text-emerald-600">{editingBill.totalAmount}</span>
-                        <span className="text-sm font-black text-slate-300">EGP</span>
-                      </div>
+                    <div className="w-full sm:w-auto text-right">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1">الإجمالي المستحق</p>
+                       <div className="flex items-center justify-end gap-2">
+                         <span className="text-4xl sm:text-5xl font-black text-emerald-600 tracking-tighter">{editingBill.totalAmount}</span>
+                         <span className="text-[10px] sm:text-sm font-black text-slate-300">EGP</span>
+                       </div>
                     </div>
-                     <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                        <button onClick={() => setEditingBill(null)} className="w-full sm:w-auto px-6 py-4 rounded-[1.2rem] bg-slate-50 text-slate-500 font-black text-xs hover:bg-slate-100 transition-all active:scale-95">تراجـع</button>
+                    <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                        <button 
+                          onClick={() => setEditingBill(null)} 
+                          className="order-4 sm:order-1 w-full sm:w-auto px-6 py-4 rounded-[1.2rem] bg-slate-50 text-slate-500 font-black text-xs hover:bg-slate-100 transition-all active:scale-95"
+                        >
+                          تراجـع
+                        </button>
+                        
+                        {editingBill.status === 'checkout_requested' && (
+                          <button 
+                            onClick={() => handleCancelCheckoutRequest(editingBill)} 
+                            className="order-3 sm:order-2 w-full sm:w-auto px-6 py-4 rounded-[1.2rem] bg-rose-50 text-rose-600 font-black text-xs hover:bg-rose-100 transition-all active:scale-95 border border-rose-100"
+                          >
+                            رفض الطلب
+                          </button>
+                        )}
+
                         <button 
                           onClick={handleUpdateActiveSession} 
                           disabled={loading}
-                          className="w-full sm:w-auto px-6 py-4 rounded-[1.2rem] bg-indigo-50 text-indigo-600 font-black text-xs hover:bg-indigo-100 transition-all active:scale-95 border border-indigo-100"
+                          className="order-2 sm:order-3 w-full sm:w-auto px-6 py-4 rounded-[1.2rem] bg-indigo-50 text-indigo-600 font-black text-xs hover:bg-indigo-100 transition-all active:scale-95 border border-indigo-100"
                         >
-                          حفظ التعديلات (بدون خروج)
+                          تعديل فقط
                         </button>
-                        <button onClick={handleAcceptCheckout} className="w-full sm:w-auto px-10 py-5 rounded-[1.5rem] bg-emerald-600 text-white font-black text-sm shadow-2xl shadow-emerald-200 hover:bg-emerald-700 hover:-translate-y-1 transition-all active:scale-95">تأكيد ومحاسبة</button>
-                      </div>
+                        
+                        <button 
+                          onClick={handleAcceptCheckout} 
+                          className="order-1 sm:order-4 w-full sm:w-auto px-10 py-5 rounded-[1.5rem] bg-emerald-600 text-white font-black text-sm shadow-2xl shadow-emerald-200 hover:bg-emerald-700 hover:-translate-y-1 transition-all active:scale-95"
+                        >
+                          تأكيد محاسبة
+                        </button>
+                    </div>
                  </div>
               </div>
             </div>

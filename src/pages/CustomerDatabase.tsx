@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Download, Mail, Phone, MoreVertical, Plus, X, Edit, QrCode, Send, Trash2, CheckCircle2, Loader2, ChevronUp, AlertCircle, Clock } from 'lucide-react';
+import { Search, Filter, Download, Mail, Phone, MoreVertical, Plus, X, Edit, QrCode, Send, Trash2, CheckCircle2, Loader2, ChevronUp, AlertCircle, Clock, Users2, RefreshCw } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../lib/supabase';
 import { Tables } from '../database.types';
@@ -379,41 +379,76 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
       )}
 
       {/* Header Controls */}
-      <div className="bg-white/80 backdrop-blur-md p-4 sm:p-6 rounded-[2rem] sm:rounded-[2.5rem] border border-white shadow-xl flex flex-col xl:flex-row justify-between items-center gap-4 sm:gap-6 sticky top-2 sm:top-6 z-30">
-        <div className="relative flex-1 w-full lg:max-w-md">
-          <Search className="absolute right-4 sm:right-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+      <div className="bg-white/90 backdrop-blur-xl p-3 sm:p-6 rounded-3xl sm:rounded-[2.5rem] border border-white shadow-2xl flex flex-col lg:flex-row justify-between items-center gap-4 sm:gap-6 sticky top-2 sm:top-6 z-40 transition-all mx-2 sm:mx-0">
+        <div className="relative flex-1 w-full lg:max-w-md group">
+          <Search className="absolute right-4 sm:right-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={20} />
           <input
             type="text"
-            placeholder="البحث باسم العميل أو الكود..."
-            className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pr-12 sm:pr-16 pl-4 sm:pl-6 py-3 sm:py-4 text-base sm:text-lg font-bold focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 outline-none transition-all"
+            placeholder="بحث بالاسم أو الكود..."
+            className="w-full bg-slate-50/50 border-2 border-slate-100 rounded-2xl pr-12 sm:pr-16 pl-4 sm:pl-6 py-3 sm:py-4 text-sm sm:text-lg font-black focus:border-indigo-500 focus:bg-white focus:ring-8 focus:ring-indigo-100 outline-none transition-all placeholder:text-slate-300"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <div className="flex flex-wrap gap-2 sm:gap-4 w-full lg:w-auto justify-center lg:justify-end">
-          <button
-            onClick={() => setActiveModal('add')}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-8 py-3 sm:py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs sm:text-sm hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 active:scale-95"
-          >
-            <Plus size={18} /> إضافة عميل جديد
-          </button>
 
-          <button 
-            onClick={() => setSortConfig(prev => ({ column: 'code', ascending: !prev.ascending }))}
-            className="flex items-center gap-2 px-8 py-4 bg-indigo-50 text-indigo-600 rounded-2xl font-black text-sm hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm active:scale-95"
-          >
-            {sortConfig.ascending ? <ChevronUp size={18} /> : <ChevronUp size={18} className="rotate-180" />} 
-            ترتيب {sortConfig.ascending ? 'تصاعدي' : 'تنازلي'}
-          </button>
-          
-          <button className="flex items-center gap-2 px-8 py-4 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all shadow-lg active:scale-95"><Download size={18} /> تصدير Excel</button>
+        {/* Desktop Buttons / Mobile Filter Trigger */}
+        <div className="flex items-center gap-3 w-full lg:w-auto">
+          <div className="hidden lg:flex items-center gap-3 w-full">
+            <button
+              onClick={() => setActiveModal('add')}
+              className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 active:scale-95"
+            >
+              <Plus size={18} /> إضافة عميل
+            </button>
+
+            <button 
+              onClick={() => setSortConfig(prev => ({ column: 'code', ascending: !prev.ascending }))}
+              className="px-6 py-4 bg-white text-slate-600 border-2 border-slate-100 rounded-2xl font-black text-sm hover:border-indigo-200 hover:text-indigo-600 transition-all active:scale-95 flex items-center gap-2"
+            >
+              {sortConfig.ascending ? <ChevronUp size={16} /> : <ChevronUp size={16} className="rotate-180" />} 
+              الترتيب
+            </button>
+            
+            <button className="px-6 py-4 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all shadow-lg active:scale-95 flex items-center gap-2">
+               <Download size={16} /> تصدير Excel
+            </button>
+          </div>
+
+          {/* Quick Actions Mobile Bar */}
+          <div className="flex lg:hidden items-center gap-2 w-full">
+            <button 
+              onClick={() => setSortConfig(prev => ({ column: 'code', ascending: !prev.ascending }))}
+              className="flex-1 h-12 bg-white border-2 border-slate-100 rounded-xl flex items-center justify-center gap-2 font-black text-xs text-slate-600 active:bg-slate-50"
+            >
+               <Filter size={16} /> تصفية
+            </button>
+            <button 
+              onClick={() => fetchCustomers()}
+              className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center active:scale-90 transition-all"
+            >
+               <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+            </button>
+            <button className="w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center active:scale-90 transition-all">
+               <Download size={18} />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Database Table Container */}
-      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl overflow-hidden min-h-[500px] relative group/table transition-all">
+      {/* Floating Action Button (FAB) for Mobile - Add Customer */}
+      <div className="fixed bottom-24 left-6 z-50 lg:hidden">
+        <button
+          onClick={() => setActiveModal('add')}
+          className="w-16 h-16 bg-indigo-600 text-white rounded-full shadow-2xl shadow-indigo-300 flex items-center justify-center active:scale-90 active:rotate-90 transition-all border-4 border-white"
+        >
+          <Plus size={32} strokeWidth={3} />
+        </button>
+      </div>
+
+      {/* Database Container */}
+      <div className="relative">
         {loading && (
-          <div className="absolute inset-0 bg-white/70 backdrop-blur-lg z-10 flex items-center justify-center">
+          <div className="absolute inset-0 bg-white/70 backdrop-blur-lg z-40 flex items-center justify-center rounded-[2.5rem]">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="animate-spin text-indigo-600" size={64} />
               <p className="text-indigo-900 font-black animate-pulse">جاري تحميل البيانات...</p>
@@ -421,177 +456,182 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
           </div>
         )}
 
-        <div className="overflow-x-auto custom-scrollbar">
-          <table className="w-full text-right min-w-[1000px]">
-          <thead>
-            <tr className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100 sticky top-0 bg-white z-20">
-              <th 
-                className="px-8 py-6 cursor-pointer hover:text-indigo-600 transition-colors group"
-                onClick={() => setSortConfig(prev => ({ 
-                  column: 'code', 
-                  ascending: prev.column === 'code' ? !prev.ascending : true 
-                }))}
-              >
-                <div className="flex items-center gap-2">
-                  <span>الاسم والكود</span>
-                  {sortConfig.column === 'code' && (
-                    <ChevronUp className={`transition-transform duration-300 ${sortConfig.ascending ? '' : 'rotate-180'}`} size={12} />
-                  )}
-                </div>
-              </th>
-              <th className="px-6 py-6">التواصل</th>
-              <th className="px-6 py-6 text-center">النوع</th>
-              <th className="px-6 py-6 text-center">حالة البريد</th>
-              <th className="px-6 py-6 text-center">الحالة</th>
-              <th className="px-8 py-6 text-left">أدوات</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50 font-bold relative">
-            {!loading && filteredCustomers.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-8 py-20 text-center text-slate-400 font-black">
-                  لا يوجد عملاء مطابقين للبحث
-                </td>
+        {/* Desktop Table View */}
+        <div className="hidden lg:block bg-white rounded-[2.5rem] border border-slate-100 shadow-2xl overflow-hidden min-h-[500px] relative group/table transition-all">
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-right min-w-[1000px]">
+            <thead>
+              <tr className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100 sticky top-0 bg-white z-20">
+                <th 
+                  className="px-8 py-6 cursor-pointer hover:text-indigo-600 transition-colors group"
+                  onClick={() => setSortConfig(prev => ({ 
+                    column: 'code', 
+                    ascending: prev.column === 'code' ? !prev.ascending : true 
+                  }))}
+                >
+                  <div className="flex items-center gap-2">
+                    <span>الاسم والكود</span>
+                    {sortConfig.column === 'code' && (
+                      <ChevronUp className={`transition-transform duration-300 ${sortConfig.ascending ? '' : 'rotate-180'}`} size={12} />
+                    )}
+                  </div>
+                </th>
+                <th className="px-6 py-6">التواصل</th>
+                <th className="px-6 py-6 text-center">النوع</th>
+                <th className="px-6 py-6 text-center">حالة البريد</th>
+                <th className="px-6 py-6 text-center">الحالة</th>
+                <th className="px-8 py-6 text-left">أدوات</th>
               </tr>
-            )}
-            {paginatedCustomers.map(customer => (
-              <tr key={customer.id} className="hover:bg-indigo-50/20 transition-all group">
-                <td className="px-8 py-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-black text-xs uppercase">
-                      {customer.full_name?.charAt(0) || '?'}
+            </thead>
+            <tbody className="divide-y divide-slate-50 font-bold">
+              {paginatedCustomers.map(customer => (
+                <tr key={customer.id} className="hover:bg-indigo-50/20 transition-all group">
+                  <td className="px-8 py-6">
+                    <div className="flex items-center gap-3 text-right">
+                      <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-black text-xs uppercase shrink-0">
+                        {customer.full_name?.charAt(0) || '?'}
+                      </div>
+                      <div>
+                        <p className="text-slate-800 font-black truncate max-w-[200px]">{customer.full_name}</p>
+                        <p className="text-[10px] text-indigo-500 font-mono tracking-widest bg-indigo-50 px-2 rounded inline-block mt-1">{customer.code}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-slate-800 font-black">{customer.full_name}</p>
-                      <p className="text-[10px] text-indigo-500 font-mono tracking-widest bg-indigo-50 px-2 rounded inline-block mt-1">{customer.code}</p>
+                  </td>
+                  <td className="px-6 py-6">
+                    <div className="flex flex-col gap-1 text-xs text-slate-500 text-right">
+                      <span className="flex items-center gap-2 justify-end"><Phone size={12} /> {customer.phone}</span>
+                      {customer.email && <span className="flex items-center gap-2 justify-end"><Mail size={12} /> {customer.email}</span>}
                     </div>
-                  </div>
-                </td>
-                <td className="px-6 py-6">
-                  <div className="flex flex-col gap-1 text-xs text-slate-500">
-                    <span className="flex items-center gap-2"><Phone size={12} /> {customer.phone}</span>
-                    {customer.email && <span className="flex items-center gap-2"><Mail size={12} /> {customer.email}</span>}
-                  </div>
-                </td>
-                <td className="px-6 py-6 text-center text-slate-400 text-xs">
-                  <span className={`px-2 py-1 rounded-lg text-[10px] ${customer.gender === 'Male' ? 'bg-blue-50 text-blue-500' : 'bg-pink-50 text-pink-500'}`}>{customer.gender === 'Male' ? 'ذكر' : 'أنثى'}</span>
-                </td>
-                <td className="px-6 py-6 text-center">
-                  {customer.email ? (
-                    <span 
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 mx-auto w-fit cursor-help transition-all ${
+                  </td>
+                  <td className="px-6 py-6 text-center">
+                    <span className={`px-2 py-1 rounded-lg text-[10px] ${customer.gender === 'Male' ? 'bg-blue-50 text-blue-500' : 'bg-pink-50 text-pink-500'}`}>{customer.gender === 'Male' ? 'ذكر' : 'أنثى'}</span>
+                  </td>
+                  <td className="px-6 py-6 text-center">
+                    {customer.email ? (
+                      <span className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 mx-auto w-fit ${
                         customer.email_status === 'sent' ? 'bg-emerald-50 text-emerald-600' :
                         customer.email_status === 'failed' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
                         customer.email_status === 'sending' ? 'bg-amber-50 text-amber-600' :
                         'bg-slate-50 text-slate-400'
-                      }`}
-                      title={customer.email_error || (customer.email_status === 'failed' ? 'خطأ غير معروف في السيرفر' : 'في انتظار بدء الإرسال')}
-                      onClick={() => {
-                        if (customer.email_status === 'failed') {
-                          alert(`تفاصيل الخطأ:\n${customer.email_error || 'خطأ غير معروف'}\n\nتأكد من إعدادات SMTP في لوحة التحكم.`);
-                        }
-                      }}
-                    >
-                      {customer.email_status === 'sent' ? (
-                        <><CheckCircle2 size={10} /> تم الإرسال</>
-                      ) : customer.email_status === 'failed' ? (
-                        <><AlertCircle size={10} /> فشل الإرسال</>
-                      ) : customer.email_status === 'sending' ? (
-                        <><Loader2 size={10} className="animate-spin" /> جاري الإرسال...</>
-                      ) : (
-                        <><Clock size={10} /> قيد الانتظار</>
-                      )}
+                      }`}>
+                        {customer.email_status === 'sent' ? 'تم الإرساال' : customer.email_status === 'failed' ? 'فشل' : 'معلق'}
+                      </span>
+                    ) : '-'}
+                  </td>
+                  <td className="px-6 py-6 text-center">
+                    <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${customer.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                      {customer.is_active ? 'نشط' : 'خامل'}
                     </span>
-                  ) : (
-                    <span className="text-[10px] text-slate-300 italic">لا يوجد بريد</span>
-                  )}
-                </td>
-                <td className="px-6 py-6 text-center">
-                  <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${customer.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                    {customer.is_active ? 'نشط' : 'غير نشط'}
-                  </span>
-                </td>
-                <td className="px-8 py-6 text-left">
-                  <div className="flex justify-end gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => openEditModal(customer)} title="تعديل" className="p-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
-                      <Edit size={16} />
-                    </button>
-                    <button 
-                      onClick={() => {
-                        if (customer.qr_code) {
-                          window.open(customer.qr_code, '_blank');
-                        } else {
-                          setSelectedCustomer(customer);
-                          setActiveModal('qr');
-                        }
-                      }} 
-                      title="QR Code" 
-                      className="p-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-slate-900 hover:text-white transition-colors"
-                    >
-                      <QrCode size={16} />
-                    </button>
-                    {customer.email && (
-                      <>
-                        <button 
-                          onClick={() => handleResendEmail(customer)} 
-                          title="إعادة إرسال البريد الترحيبي" 
-                          className="p-2 bg-slate-50 text-amber-500 rounded-xl hover:bg-amber-100 hover:text-amber-700 transition-colors"
-                        >
-                          <Send size={16} />
-                        </button>
-                        <button 
-                          onClick={() => openEmailModal(customer)} 
-                          title="إرسال بريد مخصص" 
-                          className="p-2 bg-slate-50 text-indigo-500 rounded-xl hover:bg-indigo-100 hover:text-indigo-700 transition-colors"
-                        >
-                          <Mail size={16} />
-                        </button>
-                      </>
-                    )}
-                    <button 
-                      onClick={() => handleDeleteCustomer(customer)} 
-                      title="حذف العميل" 
-                      className="p-2 bg-slate-50 text-rose-500 rounded-xl hover:bg-rose-100 hover:text-rose-700 transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                  </td>
+                  <td className="px-8 py-6 text-left whitespace-nowrap">
+                    <div className="flex justify-end gap-2">
+                       <button onClick={() => openEditModal(customer)} className="p-2 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-xl transition-all">
+                         <Edit size={16} />
+                       </button>
+                       <button onClick={() => { setSelectedCustomer(customer); setActiveModal('qr'); }} className="p-2 bg-slate-50 hover:bg-slate-900 hover:text-white rounded-xl transition-all">
+                         <QrCode size={16} />
+                       </button>
+                       <button onClick={() => handleDeleteCustomer(customer)} className="p-2 bg-slate-50 hover:bg-rose-600 hover:text-white rounded-xl transition-all">
+                         <Trash2 size={16} />
+                       </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!loading && filteredCustomers.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-20 text-center font-black text-slate-300 italic">لا يوجد عملاء مطابقين</td>
+                </tr>
+              )}
+            </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Mobile List View - Higher Density */}
+        <div className="lg:hidden bg-white rounded-[2rem] border border-slate-100 shadow-xl overflow-hidden pb-4">
+           <div className="divide-y divide-slate-50">
+             {paginatedCustomers.map(customer => (
+               <div key={customer.id} className="flex items-center justify-between p-3 active:bg-slate-50 transition-colors relative">
+                  {/* Visual Accent */}
+                  <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full ${customer.is_active ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-200'}`} />
+                  
+                  <div className="flex items-center gap-3 text-right">
+                     <div className="relative shrink-0">
+                        <div className="w-10 h-10 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-sm shadow-md">
+                          {customer.full_name?.charAt(0)}
+                        </div>
+                        {customer.is_active && (
+                          <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full animate-pulse" />
+                        )}
+                     </div>
+                     <div className="space-y-0 text-right overflow-hidden">
+                        <h4 className="font-black text-slate-900 text-[13px] leading-tight truncate max-w-[120px]">{customer.full_name}</h4>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[8px] font-mono font-black text-indigo-500/80 uppercase tracking-tighter">{customer.code}</span>
+                          <span className="text-[10px] font-black text-slate-400 font-mono scale-[0.8] origin-right">{customer.phone}</span>
+                        </div>
+                     </div>
                   </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  
+                  <div className="flex items-center gap-1">
+                     <button 
+                       onClick={() => { setSelectedCustomer(customer); setActiveModal('qr'); }}
+                       className="p-2 text-indigo-600 bg-indigo-50/50 rounded-lg active:bg-indigo-600 active:text-white transition-all"
+                     >
+                        <QrCode size={14} />
+                     </button>
+                     <button 
+                       onClick={() => openEditModal(customer)}
+                       className="p-2 text-slate-400 hover:text-slate-900 rounded-lg transition-colors"
+                     >
+                        <Edit size={14} />
+                     </button>
+                     <button 
+                       onClick={() => handleDeleteCustomer(customer)}
+                       className="p-2 text-rose-400 active:bg-rose-600 active:text-white rounded-lg transition-all"
+                     >
+                        <Trash2 size={14} />
+                     </button>
+                  </div>
+               </div>
+             ))}
+           </div>
+           {!loading && filteredCustomers.length === 0 && (
+              <div className="py-20 text-center">
+                <Users2 size={40} className="mx-auto text-slate-200 mb-2" />
+                <p className="font-black text-slate-400 text-xs text-center">لا يوجد عملاء</p>
+              </div>
+           )}
         </div>
       </div>
-
-
       {/* Pagination Controls */}
       {!loading && totalPages > 1 && (
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6 px-8 py-6 bg-white rounded-[2.5rem] border border-slate-100 shadow-sm">
-          <div className="text-xs font-black text-slate-400 uppercase tracking-widest">
-            عرض {startIndex + 1} - {Math.min(startIndex + itemsPerPage, totalCount)} من {totalCount} عميل
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 bg-white rounded-3xl border border-slate-100 shadow-sm mb-10 mx-2 sm:mx-0">
+          <div className="text-[9px] sm:text-xs font-black text-slate-400 uppercase tracking-widest text-center sm:text-right">
+            عرض {startIndex + 1} - {Math.min(startIndex + itemsPerPage, totalCount)} من {totalCount}
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
-              className="p-3 bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              className="px-3 h-10 bg-slate-100 text-slate-800 rounded-xl hover:bg-slate-200 disabled:opacity-30 transition-all font-black text-xs"
             >
               بعده
             </button>
 
             <div className="flex items-center gap-1">
-              {[...Array(Math.min(5, totalPages))].map((_, i) => {
+              {[...Array(Math.min(3, totalPages))].map((_, i) => {
                 let pageNum;
-                if (totalPages <= 5) {
+                if (totalPages <= 3) {
                   pageNum = i + 1;
-                } else if (currentPage <= 3) {
+                } else if (currentPage <= 2) {
                   pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
+                } else if (currentPage >= totalPages - 1) {
+                  pageNum = totalPages - 2 + i;
                 } else {
-                  pageNum = currentPage - 2 + i;
+                  pageNum = currentPage - 1 + i;
                 }
 
                 return (
@@ -600,7 +640,7 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
                     onClick={() => setCurrentPage(pageNum)}
                     className={`w-10 h-10 rounded-xl font-black text-xs transition-all ${
                       currentPage === pageNum
-                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+                        ? 'bg-indigo-600 text-white'
                         : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
                     }`}
                   >
@@ -613,7 +653,7 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
             <button
               onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
-              className="p-3 bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              className="px-3 h-10 bg-slate-100 text-slate-800 rounded-xl hover:bg-slate-200 disabled:opacity-30 transition-all font-black text-xs"
             >
               قبله
             </button>
@@ -626,22 +666,25 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
       {/* 1. Add Customer Modal */}
       {activeModal === 'add' && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xl p-0 sm:p-4 animate-in fade-in transition-all">
-          <div className="bg-white w-full max-w-2xl rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-in slide-in-from-bottom-10 duration-500">
-            <div className="bg-gradient-to-r from-slate-900 to-indigo-950 p-8 flex justify-between items-center text-white shrink-0">
+          <div className="bg-white w-full max-w-2xl rounded-t-[3rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden max-h-[95vh] flex flex-col animate-in slide-in-from-bottom-20 duration-500">
+             {/* Mobile Drag Handle */}
+             <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto my-4 sm:hidden shrink-0" />
+            
+            <div className="bg-gradient-to-r from-slate-900 to-indigo-950 p-6 sm:p-8 flex justify-between items-center text-white shrink-0">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-indigo-500/20 rounded-2xl text-indigo-400">
-                  <Plus size={24} />
+                <div className="p-2 sm:p-3 bg-indigo-500/20 rounded-2xl text-indigo-400">
+                  <Plus size={20} className="sm:w-6 sm:h-6" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-black">إضافة عميل جديد</h3>
-                  <p className="text-indigo-300/60 text-xs font-bold uppercase tracking-widest mt-1">إنشاء سجل جديد في النظام</p>
+                  <h3 className="text-xl sm:text-2xl font-black">إضافة عميل جديد</h3>
+                  <p className="text-indigo-300/60 text-[8px] sm:text-xs font-bold uppercase tracking-widest mt-0.5 sm:mt-1">إنشاء سجل جديد في النظام</p>
                 </div>
               </div>
               <button 
                 onClick={resetForm}
-                className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors"
+                className="p-2 sm:p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors"
               >
-                <X size={24} />
+                <X size={20} className="sm:w-6 sm:h-6" />
               </button>
             </div>
             
@@ -754,7 +797,10 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
       {/* 2. Edit Customer Modal */}
       {activeModal === 'edit' && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xl p-0 sm:p-4 animate-in fade-in transition-all">
-          <div className="bg-white w-full max-w-lg rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl p-8 animate-in zoom-in-95 duration-300">
+          <div className="bg-white w-full max-w-lg rounded-t-[3rem] sm:rounded-[2.5rem] shadow-2xl p-6 sm:p-8 animate-in slide-in-from-bottom-20 duration-500 overflow-y-auto max-h-[90vh]">
+            {/* Mobile Drag Handle */}
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6 sm:hidden shrink-0" />
+            
             <div className="flex justify-between items-center mb-8 border-b border-slate-100 pb-6">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-600">
@@ -812,7 +858,10 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
       {/* 3. QR Code Modal */}
       {activeModal === 'qr' && selectedCustomer && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/80 backdrop-blur-2xl p-0 sm:p-4 animate-in fade-in transition-all">
-          <div className="bg-white w-full max-w-sm rounded-t-[2.5rem] sm:rounded-[3rem] shadow-2xl p-10 text-center relative animate-in slide-in-from-bottom-20 duration-500 overflow-hidden">
+          <div className="bg-white w-full max-w-sm rounded-t-[3.5rem] sm:rounded-[3rem] shadow-2xl p-8 sm:p-10 text-center relative animate-in slide-in-from-bottom-20 duration-500 overflow-hidden max-h-[95vh] flex flex-col items-center">
+            {/* Mobile Drag Handle */}
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6 sm:hidden shrink-0" />
+            
             {/* Background pattern */}
             <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-indigo-50 to-transparent -z-10" />
             
@@ -859,8 +908,11 @@ export const CustomerDatabase = ({ branchId }: { branchId?: string }) => {
       {/* 4. Custom Email Modal */}
       {activeModal === 'email' && selectedCustomer && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xl p-0 sm:p-4 animate-in fade-in transition-all">
-          <div className="bg-white w-full max-w-xl rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 duration-500">
-            <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 p-8 flex justify-between items-center text-white">
+          <div className="bg-white w-full max-w-xl rounded-t-[3.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-20 duration-500 max-h-[95vh] flex flex-col">
+            {/* Mobile Drag Handle */}
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto my-4 sm:hidden shrink-0" />
+            
+            <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 p-6 sm:p-8 flex justify-between items-center text-white shrink-0">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-white/20 rounded-2xl">
                   <Mail size={24} />

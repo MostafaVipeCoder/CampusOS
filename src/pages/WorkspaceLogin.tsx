@@ -139,7 +139,7 @@ export const WorkspaceLogin = () => {
     setOrderLoading(true);
     try {
       const cartEntries = Object.values(cart) as any[];
-      const subtotal = cartEntries.reduce((sum, entry) => sum + ((entry.item.selling_price || entry.item.price) * entry.quantity), 0);
+      const subtotal = cartEntries.reduce((sum, entry) => sum + ((Number(entry.item.selling_price) || Number(entry.item.price) || 0) * (Number(entry.quantity) || 1)), 0);
       
       // 1. Attempt to create structured order records (if tables exist)
       try {
@@ -163,7 +163,7 @@ export const WorkspaceLogin = () => {
                         order_id: order.id,
                         product_id: entry.item.id,
                         quantity: entry.quantity,
-                        price_at_purchase: entry.item.selling_price || entry.item.price
+                        price_at_purchase: Number(entry.item.selling_price) || Number(entry.item.price) || 0
                     });
               }
           }
@@ -189,12 +189,12 @@ export const WorkspaceLogin = () => {
         id: e.item.id,
         name: e.item.name,
         image_url: e.item.image_url,
-        price: e.item.selling_price || e.item.price,
+        price: Number(e.item.selling_price) || Number(e.item.price) || 0,
         quantity: e.quantity,
         time: new Date().toISOString()
       }))];
       
-      const newAmount = currentCateringAmount + subtotal;
+      const newAmount = Number(currentCateringAmount) + Number(subtotal);
       
       const { error: sessionErr } = await (supabase as any)
         .from('workspace_sessions')
@@ -222,6 +222,10 @@ export const WorkspaceLogin = () => {
         const currentRefTime = session.is_paused ? new Date(session.last_pause_start).getTime() : new Date().getTime();
         const totalPausedMs = (Number(session.total_paused_minutes) || 0) * 60000;
         const diff = Math.max(0, currentRefTime - start - totalPausedMs);
+        if (isNaN(diff)) {
+          setElapsedTime('00:00:00');
+          return;
+        }
 
         const hours = Math.floor(diff / (1000 * 60 * 60));
         const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));

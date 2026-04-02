@@ -221,7 +221,7 @@ export const KitchenKiosk = () => {
     setProcessingOrder(true);
     try {
       const cartEntries = Object.values(cart) as CartItem[];
-      const subtotal = cartEntries.reduce((sum, entry) => sum + ((entry.item.selling_price || entry.item.price || 0) * entry.quantity), 0);
+      const subtotal = cartEntries.reduce((sum, entry) => sum + ((Number(entry.item.selling_price) || Number(entry.item.price) || 0) * (Number(entry.quantity) || 1)), 0);
       
       // 1. Create Order records
       const { data: order, error: orderErr } = await (supabase as any)
@@ -243,7 +243,7 @@ export const KitchenKiosk = () => {
                     order_id: order.id,
                     product_id: entry.item.id,
                     quantity: entry.quantity,
-                    price_at_purchase: entry.item.selling_price || entry.item.price || 0
+                    price_at_purchase: Number(entry.item.selling_price) || Number(entry.item.price) || 0
                 });
           }
       }
@@ -263,18 +263,23 @@ export const KitchenKiosk = () => {
       const newOrders = [...currentOrders, ...cartEntries.map(e => ({
         id: e.item.id,
         name: e.item.name,
-        price: e.item.selling_price || e.item.price || 0,
+        price: Number(e.item.selling_price) || Number(e.item.price) || 0,
         quantity: e.quantity,
         time: new Date().toISOString(),
         ordered_by: orderName.trim() || 'Guest',
         kiosk: true 
       }))];
       
-      const newAmount = currentCateringAmount + subtotal;
+      const newAmount = (Number(currentCateringAmount) || 0) + (Number(subtotal) || 0);
       
+      const currentTotalAmount = Number(activeSession.total_amount) || 0;
       const { error: sessionErr } = await (supabase as any)
         .from('workspace_sessions')
-        .update({ orders: newOrders, catering_amount: newAmount })
+        .update({ 
+          orders: newOrders, 
+          catering_amount: newAmount,
+          total_amount: currentTotalAmount + Number(subtotal)
+        })
         .eq('id', activeSession.id);
         
       if (sessionErr) throw sessionErr;
@@ -648,7 +653,7 @@ export const KitchenKiosk = () => {
                    </div>
                    <div className="text-right">
                       <p className="text-white/60 font-bold text-[10px] uppercase tracking-wider">الإجمالي</p>
-                      <p className="text-white font-black text-xl">{Object.values(cart).reduce((sum: number, e: any) => sum + (((e.item?.selling_price || e.item?.price || 0) * e.quantity) || 0), 0)} EGP</p>
+                      <p className="text-white font-black text-xl">{Object.values(cart).reduce((sum: number, e: any) => sum + (((Number(e.item?.selling_price) || Number(e.item?.price) || 0) * (Number(e.quantity) || 1)) || 0), 0)} EGP</p>
                    </div>
                 </div>
                 <div className="flex gap-2">
@@ -708,7 +713,7 @@ export const KitchenKiosk = () => {
           <div className="p-8 bg-white border-t border-slate-100 shrink-0 hidden lg:block">
              <div className="bg-indigo-50 border border-indigo-100 rounded-3xl p-6 text-center">
                 <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">إجمالي السلة</p>
-                <p className="text-2xl font-black text-indigo-900">{Object.values(cart).reduce((sum: number, e: any) => sum + (((e.item?.selling_price || e.item?.price || 0) * e.quantity) || 0), 0)} EGP</p>
+                <p className="text-2xl font-black text-indigo-900">{Object.values(cart).reduce((sum: number, e: any) => sum + (((Number(e.item?.selling_price) || Number(e.item?.price) || 0) * (Number(e.quantity) || 1)) || 0), 0)} EGP</p>
              </div>
           </div>
         </div>
@@ -728,7 +733,7 @@ export const KitchenKiosk = () => {
                  <div className="text-left border-l border-white/10 pl-6">
                     <p className="text-white/40 font-black text-[9px] uppercase tracking-[0.3em] mb-1">Grand Total</p>
                     <p className="text-white font-black text-3xl tracking-tight">
-                       {Object.values(cart).reduce((sum: number, e: any) => sum + (((e.item?.selling_price || e.item?.price || 0) * e.quantity) || 0), 0)}
+                       {Object.values(cart).reduce((sum: number, e: any) => sum + (((Number(e.item?.selling_price) || Number(e.item?.price) || 0) * (Number(e.quantity) || 1)) || 0), 0)}
                        <span className="text-sm opacity-40 ml-2">EGP</span>
                     </p>
                  </div>

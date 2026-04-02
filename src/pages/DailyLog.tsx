@@ -46,7 +46,7 @@ const SessionRow = ({ session, onEdit, onDelete }: {
             </div>
             <div className="text-right">
                <p className="text-slate-800 font-black text-base lg:group-hover:text-indigo-600 transition-colors">
-                  {session.customers?.full_name || (session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'مستخدم')}
+                  {session.customers?.full_name || (session.user_code === 'GUEST_KITCHEN' || session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'مستخدم')}
                </p>
                <div className="flex flex-row-reverse items-center justify-start gap-3 mt-2">
                   <span className="text-[10px] text-indigo-500 font-black bg-indigo-50 px-2 py-0.5 rounded-lg">{session.user_code}</span>
@@ -574,7 +574,8 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                        </div>
                        <div className="text-right">
                           <p className="font-black text-slate-800 text-sm">
-                             {session.customers?.full_name || (session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'مستخدم')}
+                             {session.customers?.full_name || 
+                              (session.user_code === 'GUEST_KITCHEN' || session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'مستخدم')}
                           </p>
                           <p className="text-[10px] font-black text-slate-400 mt-0.5">{session.user_code}</p>
                        </div>
