@@ -365,7 +365,7 @@ export const BusinessManagement = ({ branchId }: { branchId?: string }) => {
           catering_remaining_balance: contractForm.catering_prepaid_total,
           space_hour_price: contractForm.space_hour_price,
           status: 'active'
-        }]);
+        }], { onConflict: 'company_id,month' });
 
       if (error) throw error;
       
