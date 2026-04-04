@@ -394,9 +394,16 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
   };
 
   const activeCount = sessions.filter(s => s.status === 'active' || s.status === 'checkout_requested').length;
-  const sessionsIncome = sessions.reduce((acc, s) => acc + (Number(s.total_amount) || 0), 0);
+  // Exclude corporate and subscription payments from pure cash drawer calculations
+  const cashSessionsIncome = sessions
+    .filter(s => s.payment_method !== 'corporate' && s.payment_method !== 'subscription')
+    .reduce((acc, s) => acc + (Number(s.total_amount) || 0), 0);
+  const corporateIncome = sessions
+    .filter(s => s.payment_method === 'corporate')
+    .reduce((acc, s) => acc + (Number(s.total_amount) || 0), 0);
   const subsIncome = subscriptions.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
-  const totalCashIn = sessionsIncome + subsIncome;
+  
+  const totalCashIn = cashSessionsIncome + subsIncome;
   const totalCashOut = expenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
   return (
@@ -447,7 +454,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
       </div>
 
       {/* Stats - Premium Design */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
         <div className="bg-indigo-50/50 backdrop-blur-md p-6 lg:p-10 rounded-[2rem] lg:rounded-[3rem] border border-indigo-100/50 shadow-sm relative group overflow-hidden">
            <div className="absolute -top-10 -right-10 w-32 h-32 bg-white/40 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-1000" />
            <p className="text-indigo-400 font-black text-[9px] lg:text-[10px] uppercase tracking-widest text-right mb-2 lg:mb-4">زوار اليوم</p>
@@ -466,11 +473,22 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
            </div>
         </div>
 
+        <div className="bg-purple-600 p-6 lg:p-10 rounded-[2rem] lg:rounded-[3rem] text-white shadow-xl relative group overflow-hidden">
+           <div className="absolute bottom-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+           <div className="flex flex-row-reverse justify-between items-start">
+              <div>
+                 <p className="text-purple-100 font-black text-[9px] lg:text-[10px] uppercase tracking-widest text-right mb-2 lg:mb-4">استهلاك الشركات (الآجل)</p>
+                 <h3 className="text-2xl lg:text-4xl font-black tracking-tight">{corporateIncome.toLocaleString()}</h3>
+              </div>
+              <ShoppingBag className="text-purple-100 opacity-30 lg:w-10 lg:h-10" size={24} />
+           </div>
+        </div>
+
         <div className="bg-emerald-600 p-6 lg:p-10 rounded-[2rem] lg:rounded-[3rem] text-white shadow-xl relative group overflow-hidden">
            <div className="absolute bottom-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
            <div className="flex flex-row-reverse justify-between items-start">
               <div>
-                 <p className="text-emerald-100 font-black text-[9px] lg:text-[10px] uppercase tracking-widest text-right mb-2 lg:mb-4">Cash In</p>
+                 <p className="text-emerald-100 font-black text-[9px] lg:text-[10px] uppercase tracking-widest text-right mb-2 lg:mb-4">الدخل النقدي (Cash In)</p>
                  <h3 className="text-2xl lg:text-4xl font-black tracking-tight">{totalCashIn.toLocaleString()}</h3>
               </div>
               <ArrowUpRight className="text-emerald-100 opacity-30 lg:w-10 lg:h-10" size={24} />
@@ -481,7 +499,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
            <div className="absolute top-1/2 left-0 w-32 h-32 bg-rose-50/50 rounded-full blur-3xl" />
            <div className="flex flex-row-reverse justify-between items-start">
               <div>
-                 <p className="text-rose-400 font-black text-[9px] lg:text-[10px] uppercase tracking-widest text-right mb-2 lg:mb-4">Cash Out</p>
+                 <p className="text-rose-400 font-black text-[9px] lg:text-[10px] uppercase tracking-widest text-right mb-2 lg:mb-4">المصروفات (Cash Out)</p>
                  <h3 className="text-2xl lg:text-4xl font-black text-rose-600 tracking-tight">{totalCashOut.toLocaleString()}</h3>
               </div>
               <ArrowDownRight className="text-rose-100 lg:w-10 lg:h-10" size={24} />

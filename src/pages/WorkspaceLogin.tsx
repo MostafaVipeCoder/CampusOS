@@ -1081,6 +1081,17 @@ export const WorkspaceLogin = () => {
           setUserCode={setUserCode}
           leaderCode={leaderCode}
           setLeaderCode={setLeaderCode}
+          gender={gender}
+          setGender={setGender}
+          birthDate={birthDate}
+          setBirthDate={setBirthDate}
+          college={college}
+          setCollege={setCollege}
+          customCollege={customCollege}
+          setCustomCollege={setCustomCollege}
+          showCustomCollege={showCustomCollege}
+          setShowCustomCollege={setShowCustomCollege}
+          colleges={colleges}
         />
 
         {finalBill && (

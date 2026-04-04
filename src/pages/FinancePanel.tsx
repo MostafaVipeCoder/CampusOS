@@ -18,7 +18,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
   const [dailyData, setDailyData] = useState({
     income: 0,
     expense: 0,
-    details: { catering: 0, rooms: 0, workspace: 0 }
+    details: { catering: 0, rooms: 0, workspace: 0, subscriptions: 0, corporate: 0 }
   });
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -307,13 +307,13 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
       // 1. Fetch Workspace Sessions Income
       const { data: sessions } = await (supabase as any)
         .from('workspace_sessions')
-        .select('total_amount, catering_amount')
+        .select('total_amount, catering_amount, payment_method')
         .eq('branch_id', branchId)
         .eq('status', 'completed')
         .gte('end_time', `${dateStr}T00:00:00`)
         .lte('end_time', `${dateStr}T23:59:59`);
 
-      // 2. Fetch Subscriptions Income
+      // 2. Fetch Subscriptions Income (Cash in)
       const { data: subs } = await supabase
         .from('subscriptions')
         .select('price')
@@ -336,23 +336,38 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         .eq('type', 'add')
         .gte('created_at', `${dateStr}T00:00:00`);
 
-      let workspace = 0, catering = 0;
+      let workspaceCash = 0, cateringCash = 0, corporateUsage = 0;
+      
       sessions?.forEach(s => {
         const cat = Number(s.catering_amount) || 0;
-        const total = Number(s.total_amount) || 0;
-        catering += cat;
-        workspace += (total - cat);
+        const total = Number(s.total_amount) || 0; // The bill amount
+        
+        if (s.payment_method === 'corporate') {
+           // Do not add to cash expected. Track as corporate consumption.
+           corporateUsage += total;
+        } else {
+           // Normal cash session or subscription cash-payment for extras
+           cateringCash += cat;
+           workspaceCash += Math.max(0, total - cat);
+        }
       });
 
       const subIncome = subs?.reduce((s, b) => s + (Number(b.price) || 0), 0) || 0;
       
-      const totalIncome = workspace + catering + subIncome;
+      // ONLY include actual cash payments in totalIncome
+      const totalIncome = workspaceCash + cateringCash + subIncome;
       const totalExpense = expenses?.reduce((s, e) => s + (Number(e.amount) || 0), 0) || 0;
 
       setDailyData({
         income: totalIncome,
         expense: totalExpense,
-        details: { catering, rooms: 0, workspace: workspace + subIncome }
+        details: { 
+           catering: cateringCash, 
+           rooms: 0, 
+           workspace: workspaceCash, 
+           subscriptions: subIncome,
+           corporate: corporateUsage 
+        }
       });
 
       // Load existing inventory/closing if it exists
@@ -399,7 +414,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
       // 1. Fetch Monthly Workspace Sessions
       const { data: sessions } = await (supabase as any)
         .from('workspace_sessions')
-        .select('total_amount, catering_amount')
+        .select('total_amount, catering_amount, payment_method')
         .eq('branch_id', branchId)
         .eq('status', 'completed')
         .gte('end_time', `${firstDay}T00:00:00`)
@@ -421,22 +436,32 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         .gte('date', firstDay)
         .lte('date', lastDay);
 
-      let workspace = 0, catering = 0;
+      let workspaceCash = 0, cateringCash = 0, corporateUsage = 0;
       sessions?.forEach(s => {
         const cat = s.catering_amount || 0;
         const total = s.total_amount || 0;
-        catering += cat;
-        workspace += (total - cat);
+        if (s.payment_method === 'corporate') {
+           corporateUsage += total;
+        } else {
+           cateringCash += cat;
+           workspaceCash += Math.max(0, total - cat);
+        }
       });
 
       const subIncome = subs?.reduce((s: number, b: any) => s + (b.price || 0), 0) || 0;
-      const totalIncome = workspace + catering + subIncome;
+      const totalIncome = workspaceCash + cateringCash + subIncome;
       const totalExpense = expenses?.reduce((s: number, e: any) => s + (e.amount || 0), 0) || 0;
 
       setDailyData({
         income: totalIncome,
         expense: totalExpense,
-        details: { catering, rooms: 0, workspace: workspace + subIncome }
+        details: { 
+           catering: cateringCash, 
+           rooms: 0, 
+           workspace: workspaceCash,
+           subscriptions: subIncome,
+           corporate: corporateUsage 
+        }
       });
     } catch (err) {
       console.error(err);
@@ -711,10 +736,10 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
   const renderDaily = () => (
     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="إجمالي دخل اليوم" value={dailyData.income.toLocaleString()} icon={TrendingUp} trend={8} />
+        <StatCard title="الدخل النقدي للمكان" value={dailyData.income.toLocaleString()} icon={TrendingUp} trend={8} />
         <StatCard title="مصروفات اليوم" value={dailyData.expense.toLocaleString()} icon={TrendingDown} />
-        <StatCard title="دخل الكاترينج" value={dailyData.details.catering.toLocaleString()} icon={PieChart} />
-        <StatCard title="دخل الغرف" value={dailyData.details.rooms.toLocaleString()} icon={BarChart3} />
+        <StatCard title="استهلاك الشركات (آجل)" value={dailyData.details.corporate.toLocaleString()} icon={PieChart} />
+        <StatCard title="مبيعات الاشتراكات" value={dailyData.details.subscriptions.toLocaleString()} icon={BarChart3} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -792,20 +817,23 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
           </CardHeader>
           <CardContent className="space-y-6">
             {[
-              { label: 'المساحة المشتركة', amount: dailyData.details.workspace, color: 'bg-indigo-500' },
-              { label: 'حجوزات القاعات', amount: dailyData.details.rooms, color: 'bg-emerald-500' },
-              { label: 'طلبات الكاترينج', amount: dailyData.details.catering, color: 'bg-amber-500' },
-            ].map((cat, i) => (
+              { label: 'مبيعات الاشتراكات', amount: dailyData.details.subscriptions, color: 'bg-indigo-500' },
+              { label: 'حجوزات المساحة (كاش)', amount: dailyData.details.workspace, color: 'bg-emerald-500' },
+              { label: 'مبيعات الكاترينج (كاش)', amount: dailyData.details.catering, color: 'bg-amber-500' },
+              { label: 'استهلاك الشركات (آجل)', amount: dailyData.details.corporate, color: 'bg-purple-500' },
+            ].map((cat, i) => {
+              const totalBreakdown = dailyData.income + dailyData.details.corporate;
+              return (
               <div key={i} className="space-y-2">
                 <div className="flex justify-between items-center text-sm">
                   <span className="font-bold text-slate-600">{cat.label}</span>
                   <span className="font-black text-slate-800">{cat.amount.toLocaleString()} ج.م</span>
                 </div>
                 <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                  <div className={`h-full ${cat.color} rounded-full`} style={{ width: `${(cat.amount / (dailyData.income || 1)) * 100}%` }} />
+                  <div className={`h-full ${cat.color} rounded-full`} style={{ width: `${(cat.amount / (totalBreakdown || 1)) * 100}%` }} />
                 </div>
               </div>
-            ))}
+            )})}
           </CardContent>
         </Card>
       </div>

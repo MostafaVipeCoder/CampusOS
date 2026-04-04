@@ -28,6 +28,17 @@ interface LandingFormsProps {
   setUserCode: (val: string) => void;
   leaderCode: string;
   setLeaderCode: (val: string) => void;
+  gender: string;
+  setGender: (val: string) => void;
+  birthDate: string;
+  setBirthDate: (val: string) => void;
+  college: string;
+  setCollege: (val: string) => void;
+  customCollege: string;
+  setCustomCollege: (val: string) => void;
+  showCustomCollege: boolean;
+  setShowCustomCollege: (val: boolean) => void;
+  colleges: string[];
 }
 
 export const LandingForms = ({
@@ -55,7 +66,18 @@ export const LandingForms = ({
   userCode,
   setUserCode,
   leaderCode,
-  setLeaderCode
+  setLeaderCode,
+  gender,
+  setGender,
+  birthDate,
+  setBirthDate,
+  college,
+  setCollege,
+  customCollege,
+  setCustomCollege,
+  showCustomCollege,
+  setShowCustomCollege,
+  colleges
 }: LandingFormsProps) => {
   return (
     <div className="bg-[#0B0F19]/40 backdrop-blur-3xl border border-white/5 rounded-[3rem] p-8 md:p-12 w-full max-w-md relative z-10 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.6)] animate-in zoom-in-95 fade-in duration-1000 ring-1 ring-white/10">
@@ -201,6 +223,67 @@ export const LandingForms = ({
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mr-1 text-right">الميلاد</label>
+              <input
+                type="date"
+                required
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+                className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl px-5 text-white font-bold text-right focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all [color-scheme:dark]"
+              />
+            </div>
+            
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mr-1 text-right">النوع</label>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value)}
+                className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl px-5 text-white font-bold text-right focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all appearance-none cursor-pointer"
+                dir="rtl"
+              >
+                <option className="bg-[#0B0F19] text-white font-bold" value="Male">ذكر</option>
+                <option className="bg-[#0B0F19] text-white font-bold" value="Female">أنثى</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mr-1 text-right">الكلية</label>
+            <select
+              value={showCustomCollege ? 'أخرى' : college}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'أخرى') {
+                  setShowCustomCollege(true);
+                  setCollege('');
+                } else {
+                  setShowCustomCollege(false);
+                  setCollege(val);
+                }
+              }}
+              className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl px-5 text-white font-bold text-right focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all appearance-none cursor-pointer"
+              dir="rtl"
+            >
+              <option className="bg-[#0B0F19] text-white font-bold" value="">اختر الكلية</option>
+              {colleges.map(c => (
+                <option className="bg-[#0B0F19] text-white font-bold" key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            
+            {showCustomCollege && (
+              <input
+                type="text"
+                required
+                value={customCollege}
+                onChange={(e) => setCustomCollege(e.target.value)}
+                className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl px-5 text-white font-bold focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all mt-2 text-right placeholder:text-slate-700"
+                placeholder="أدخل اسم الكلية"
+              />
+            )}
+          </div>
+
           <div className="pt-4">
             <button
               type="submit"
@@ -317,13 +400,7 @@ export const LandingForms = ({
               نسيت الكود؟ <span className="text-[#f78c2a] underline ml-1">استعادة</span>
             </button>
             <div className="w-px h-4 bg-white/5" />
-            <button
-              type="button"
-              onClick={() => { setIsLeaderPortal(true); setError(''); }}
-              className="flex-1 text-slate-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1.5"
-            >
-              <LayoutGrid size={12} className="text-indigo-400" /> مسؤول شركة؟ <span className="text-indigo-500 underline ml-1">دخول</span>
-            </button>
+            
           </div>
           
           <div className="pt-4">

@@ -356,6 +356,11 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     try {
       if (!editingBill.id) throw new Error("Missing Session ID");
 
+      // Determine payment method
+      const busMember = editingBill.customers?.company_members?.[0];
+      const isCorporate = !!busMember;
+      const finalPaymentMethod = editingBill.isSubscribed ? 'subscription' : (isCorporate ? 'corporate' : 'cash');
+
       // 1. Update the session record first
       const { error: sessionError } = await supabase
         .from('workspace_sessions')
@@ -367,7 +372,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
           catering_amount: Number(editingBill.cateringAmount) || 0,
           orders: editingBill.orders || [],
           total_amount: Number(editingBill.totalAmount) || 0,
-          payment_method: editingBill.isSubscribed ? 'subscription' : 'cash',
+          payment_method: finalPaymentMethod,
           notes: editingBill.notes || ''
         })
         .eq('id', editingBill.id);
