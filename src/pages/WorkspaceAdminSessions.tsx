@@ -115,7 +115,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     try {
       const { data, error } = await (supabase as any)
         .from('workspace_sessions')
-        .select(`*, customers(full_name, loyalty_points, cashback_balance, college, company_members(*, companies(*)))`)
+        .select(`*, customers(full_name, loyalty_points, cashback_balance, college, company_members(*, companies(*)), subscriptions(*))`)
         .eq('branch_id', branchId || '')
         .in('status', ['active', 'checkout_requested', 'pause_requested', 'paused', 'resume_requested'])
         .order('start_time', { ascending: false });
@@ -225,8 +225,17 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
 
     if (activeSub) {
         isSubscribed = true;
-        workspaceAmount = 0; 
-        remainingSubHours = Number(activeSub.total_hours) - Number(activeSub.used_hours);
+        const availableHours = Number(activeSub.total_hours) - Number(activeSub.used_hours);
+        remainingSubHours = availableHours - usedHours;
+
+        if (remainingSubHours < 0) {
+            const overageHours = Math.abs(remainingSubHours);
+            remainingSubHours = 0;
+            const overageMins = Math.ceil(overageHours * 60);
+            workspaceAmount = calculateSessionPrice(overageMins) || 0;
+        } else {
+            workspaceAmount = 0; 
+        }
     } else if (businessMember) {
         // Business logic: Space is logged but not paid now.
         workspaceAmount = 0; 
@@ -284,8 +293,14 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     const businessContract = editingBill.contract;
 
     if (editingBill.isSubscribed) {
-       workspaceAmount = 0;
        remainingSubHours = Number(editingBill.initialRemaining) - usedHours;
+       if (remainingSubHours < 0) {
+           const overageHours = Math.abs(remainingSubHours);
+           remainingSubHours = 0;
+           workspaceAmount = calculateSessionPrice(Math.ceil(overageHours * 60)) || 0;
+       } else {
+           workspaceAmount = 0;
+       }
     } else if (businessContract && businessContract.type === 'Business') {
        workspaceAmount = (usedHours * (Number(businessContract.space_price) || 0));
     } else {
@@ -463,7 +478,13 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                 .eq('id', editingBill.contract.id);
         }
 
-        const pointsToAward = Math.floor(Number(editingBill.diffMinutes || 0) / (60 / pointsPerHour));
+        let prevConvertedMins = 0;
+        const match = (editingBill.notes || '').match(/\|CONVERTED_MINS:(\d+)\|/);
+        if (match) {
+           prevConvertedMins = parseInt(match[1]);
+        }
+        const billableMinsForPoints = Math.max(0, Number(editingBill.diffMinutes || 0) - prevConvertedMins);
+        const pointsToAward = Math.floor(billableMinsForPoints / (60 / pointsPerHour));
         
         // Student Cashback on the PAID amount (Total - Deducted Cashback)
         const isStudent = !!editingBill.customers?.college;
@@ -1327,8 +1348,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                   
                   <div className="flex justify-between items-center bg-white/50 p-4 rounded-xl border border-white shadow-sm">
                     <span className="text-[10px] uppercase tracking-wider text-slate-400">تكلفة الاستخدام</span>
-                    <span className={`text-sm md:text-base ${checkoutBill.isSubscribed ? 'text-indigo-600' : 'text-slate-900'}`}>
-                       {checkoutBill.isSubscribed ? '✓ اشتراك ساعات' : `${checkoutBill.workspaceAmount} EGP`}
+                    <span className={`text-sm md:text-base ${checkoutBill.isSubscribed && checkoutBill.workspaceAmount === 0 ? 'text-indigo-600' : 'text-slate-900'}`}>
+                       {checkoutBill.isSubscribed && checkoutBill.workspaceAmount === 0 ? '✓ اشتراك ساعات' : `${checkoutBill.workspaceAmount} EGP`}
                     </span>
                   </div>
 

@@ -67,8 +67,8 @@ export const FinalReceiptModal = ({ bill, onClose, companyName }: FinalReceiptMo
                   
                   <div className="flex justify-between items-center bg-white/70 p-5 rounded-2xl border border-white shadow-sm text-right">
                     <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">تكلفة الجلسة</span>
-                    <span className={`font-black text-lg ${bill.payment_method === 'subscription' ? 'text-emerald-600' : 'text-slate-900'}`}>
-                       {bill.payment_method === 'subscription' ? '✓ مخصوم من الاشتراك' : `${Number(bill.total_amount || 0) - (Number(bill.catering_amount) || 0)} EGP`}
+                    <span className={`font-black text-lg ${bill.payment_method === 'subscription' && (Number(bill.total_amount || 0) - Number(bill.catering_amount || 0)) === 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
+                       {bill.payment_method === 'subscription' && (Number(bill.total_amount || 0) - Number(bill.catering_amount || 0)) === 0 ? '✓ مخصوم من الاشتراك' : `${Number(bill.total_amount || 0) - (Number(bill.catering_amount) || 0)} EGP`}
                     </span>
                   </div>
 
@@ -130,7 +130,7 @@ export const FinalReceiptModal = ({ bill, onClose, companyName }: FinalReceiptMo
                   <div className="relative">
                     <div className="absolute inset-x-0 bottom-1 h-3 bg-emerald-500/10 -rotate-1 rounded-full blur-[2px]" />
                     <p className="text-6xl font-black text-emerald-600 relative z-10 italic">
-                      {companyName ? 'Cloud' : (bill.payment_method === 'subscription' ? bill.catering_amount : bill.total_amount)} 
+                      {companyName ? 'Cloud' : bill.total_amount}
                       <span className="text-xl opacity-30 ml-3 not-italic">{companyName ? 'Business' : 'EGP'}</span>
                     </p>
                   </div>

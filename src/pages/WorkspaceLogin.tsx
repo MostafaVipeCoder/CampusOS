@@ -964,11 +964,34 @@ export const WorkspaceLogin = () => {
   }, []);
 
   const convertPointsToCashback = async () => {
-    if (!profileData || profileData.loyalty_points < 100) return;
+    if (!profileData) return;
     setIsConverting(true);
     try {
-        const pointsToConvert = profileData.loyalty_points;
-        const rewardAmount = parseFloat((pointsToConvert / cbRatio).toFixed(2)); // Dynamic conversion based on settings
+        const start = new Date(session.start_time).getTime();
+        const currentRefTime = session.is_paused ? new Date(session.last_pause_start).getTime() : new Date().getTime();
+        const totalPausedMs = (Number(session.total_paused_minutes) || 0) * 60000;
+        const diffMs = Math.max(0, currentRefTime - start - totalPausedMs);
+        const liveMins = Math.floor(diffMs / 60000);
+        
+        let prevConvertedMins = 0;
+        let baseNotes = session.notes || '';
+        const match = baseNotes.match(/\|CONVERTED_MINS:(\d+)\|/);
+        if (match) {
+           prevConvertedMins = parseInt(match[1]);
+           baseNotes = baseNotes.replace(/\|CONVERTED_MINS:\d+\|/g, '').trim();
+        }
+        
+        const newMinsToConvert = Math.max(0, liveMins - prevConvertedMins);
+        const livePoints = Math.floor(newMinsToConvert / (60 / ptsPerHour));
+        
+        const pointsToConvert = (profileData.loyalty_points || 0) + livePoints;
+        if (pointsToConvert < 1) {
+            window.alert('لا يوجد نقاط كافية للتحويل');
+            setIsConverting(false);
+            return;
+        }
+
+        const rewardAmount = parseFloat((pointsToConvert / cbRatio).toFixed(2));
 
         const { error } = await supabase
             .from('customers')
@@ -979,10 +1002,13 @@ export const WorkspaceLogin = () => {
             .eq('id', profileData.id);
 
         if (error) throw error;
+        
+        const newNotes = `${baseNotes} |CONVERTED_MINS:${prevConvertedMins + newMinsToConvert}|`.trim();
+        await supabase.from('workspace_sessions').update({ notes: newNotes }).eq('id', session.id);
+        
+        setSession({...session, notes: newNotes});
         await fetchProfileData();
-        // Modern notification feedback
         window.alert(`🎉 تم تحويل ${pointsToConvert} نقطة بنجاح! \nتم إضافة ${rewardAmount} جنيه رصيد كاش باك لحسابك بنجاح. \nسيبدأ تجميع النقاط من جديد من الآن.`);
-        console.log(`Converted ${pointsToConvert} points to ${rewardAmount} EGP`);
     } catch (err: any) {
         console.error("Conversion failure:", err.message);
     } finally {
