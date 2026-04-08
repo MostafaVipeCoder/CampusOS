@@ -38,7 +38,10 @@ export const ContractsPanel = ({ branchId }: { branchId?: string }) => {
         conditionsPartner: c.conditions_partner || [],
         prepaidBalance: c.prepaid_balance || 0,
         spacePrice: c.space_price || 0,
-        memberCodes: c.customers?.map((m: any) => m.code).join(', ') || ''
+        memberCodes: c.customers?.map((m: any) => m.code).join(', ') || '',
+        leaderName: c.leader_name || '',
+        leaderPhone: c.leader_phone || '',
+        notes: c.notes || ''
       }));
       setContracts(formatted);
     }
@@ -57,7 +60,10 @@ export const ContractsPanel = ({ branchId }: { branchId?: string }) => {
     conditionsPartner: '',
     prepaidBalance: '',
     spacePrice: '',
-    memberCodes: ''
+    memberCodes: '',
+    leaderName: '',
+    leaderPhone: '',
+    notes: ''
   });
 
   const getStudentCashbackPercentage = () => {
@@ -84,7 +90,10 @@ export const ContractsPanel = ({ branchId }: { branchId?: string }) => {
       conditions_us: formData.conditionsUs.split('\n').filter(Boolean),
       conditions_partner: formData.conditionsPartner.split('\n').filter(Boolean),
       prepaid_balance: Number(formData.prepaidBalance) || 0,
-      space_price: Number(formData.spacePrice) || 0
+      space_price: Number(formData.spacePrice) || 0,
+      leader_name: formData.leaderName,
+      leader_phone: formData.leaderPhone,
+      notes: formData.notes
     }).select().single();
 
     if (error) {
@@ -118,7 +127,10 @@ export const ContractsPanel = ({ branchId }: { branchId?: string }) => {
         conditionsPartner: '',
         prepaidBalance: '',
         spacePrice: '',
-        memberCodes: ''
+        memberCodes: '',
+        leaderName: '',
+        leaderPhone: '',
+        notes: ''
     });
   };
 
@@ -305,6 +317,27 @@ export const ContractsPanel = ({ branchId }: { branchId?: string }) => {
               </div>
 
               <div>
+                <label className="text-xs font-bold text-slate-500 mb-2 block">رئيس النشاط / المسئول</label>
+                <input
+                  type="text"
+                  placeholder="الاسم الثلاثي"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 text-sm font-black text-slate-800 outline-none focus:border-indigo-500 transition-all"
+                  value={formData.leaderName}
+                  onChange={(e) => setFormData({ ...formData, leaderName: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-2 block">رقم التواصل</label>
+                <input
+                  type="text"
+                  placeholder="01xxxxxxxxx"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 text-sm font-black text-slate-800 outline-none focus:border-indigo-500 transition-all"
+                  value={formData.leaderPhone}
+                  onChange={(e) => setFormData({ ...formData, leaderPhone: e.target.value })}
+                />
+              </div>
+
+              <div>
                 <label className="block text-xs font-bold text-slate-500 mb-2">بداية التعاقد</label>
                 <input
                   type="date"
@@ -340,6 +373,16 @@ export const ContractsPanel = ({ branchId }: { branchId?: string }) => {
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 text-sm font-black text-slate-800 outline-none focus:border-indigo-500 transition-all"
                   value={formData.members}
                   onChange={(e) => setFormData({ ...formData, members: e.target.value })}
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="block text-xs font-bold text-slate-500 mb-2">ملاحظات وتفاصيل إضافية</label>
+                <textarea
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 text-sm font-medium text-slate-600 outline-none focus:border-indigo-500 transition-all min-h-[60px]"
+                  placeholder="ملاحظات حول الشراكة..."
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 />
               </div>
 
@@ -427,6 +470,12 @@ export const ContractsPanel = ({ branchId }: { branchId?: string }) => {
                   <ul className="text-xs text-slate-500 list-disc list-inside space-y-1">
                     {selectedContract.conditionsUs.map((c, i) => <li key={i}>{c}</li>)}
                   </ul>
+                  {selectedContract.notes && (
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                       <p className="text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest text-right">ملاحظات إضافية</p>
+                       <p className="text-xs font-bold text-slate-600 text-right">{selectedContract.notes}</p>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -38,6 +38,8 @@ interface LandingFormsProps {
   setCustomCollege: (val: string) => void;
   showCustomCollege: boolean;
   setShowCustomCollege: (val: boolean) => void;
+  rememberMe: boolean;
+  setRememberMe: (val: boolean) => void;
   colleges: string[];
 }
 
@@ -77,6 +79,8 @@ export const LandingForms = ({
   setCustomCollege,
   showCustomCollege,
   setShowCustomCollege,
+  rememberMe,
+  setRememberMe,
   colleges
 }: LandingFormsProps) => {
   return (
@@ -391,19 +395,45 @@ export const LandingForms = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 mt-8 text-center border-t border-white/5 pt-6">
-            <button
-              type="button"
-              onClick={() => { setIsForgotCode(true); setIsSignUp(false); setError(''); }}
-              className="flex-1 text-slate-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all"
-            >
-              نسيت الكود؟ <span className="text-[#f78c2a] underline ml-1">استعادة</span>
-            </button>
-            <div className="w-px h-4 bg-white/5" />
-            
+          <div className="flex items-center justify-between px-2 py-4 bg-white/[0.02] border border-white/[0.05] rounded-3xl mt-2 backdrop-blur-sm">
+             <div 
+               className="flex items-center gap-3 group cursor-pointer select-none" 
+               onClick={() => setRememberMe(!rememberMe)}
+             >
+                <div className={`w-6 h-6 rounded-lg border-2 transition-all duration-300 flex items-center justify-center ${
+                  rememberMe 
+                    ? 'bg-indigo-600 border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.4)]' 
+                    : 'bg-white/5 border-white/10 group-hover:border-white/20'
+                }`}>
+                   {rememberMe && (
+                     <svg className="w-4 h-4 text-white animate-in zoom-in-50 duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                     </svg>
+                   )}
+                </div>
+                <div className="flex flex-col">
+                  <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${
+                    rememberMe ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'
+                  }`}>
+                    تذكر بياناتي
+                  </span>
+                  <p className="text-[7px] text-slate-600 font-bold uppercase tracking-tighter">Stay Signed In</p>
+                </div>
+             </div>
+
+             <button
+               type="button"
+               onClick={() => { setIsForgotCode(true); setIsSignUp(false); setError(''); }}
+               className="group flex flex-col items-end"
+             >
+               <span className="text-slate-500 group-hover:text-white text-[10px] font-black uppercase tracking-widest transition-all">
+                 نسيت الكود؟
+               </span>
+               <span className="text-[#f78c2a] text-[8px] font-bold underline decoration-2 underline-offset-4 group-hover:text-amber-400 transition-colors">استعادة الآن</span>
+             </button>
           </div>
-          
-          <div className="pt-4">
+
+          <div className="pt-2">
             <button
               type="submit"
               disabled={loading || !userCode || !phoneNumber}

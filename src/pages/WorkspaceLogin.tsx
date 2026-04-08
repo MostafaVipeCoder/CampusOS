@@ -43,6 +43,7 @@ export const WorkspaceLogin = () => {
   const [profileData, setProfileData] = useState<any>(null);
   const [activeSub, setActiveSub] = useState<any>(null);
   const [isConverting, setIsConverting] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   
   // Dynamic Loyalty Settings
   const [ptsPerHour, setPtsPerHour] = useState(10);
@@ -110,6 +111,15 @@ export const WorkspaceLogin = () => {
     };
     fetchBranches();
     fetchStoreItems();
+
+    // Remember Me: Load credentials if exists
+    const rememberedCode = localStorage.getItem('remembered_user_code');
+    const rememberedPhone = localStorage.getItem('remembered_user_phone');
+    if (rememberedCode && rememberedPhone) {
+      setUserCode(rememberedCode);
+      setPhoneNumber(rememberedPhone);
+      setRememberMe(true);
+    }
   }, [branchId]);
 
   const fetchStoreItems = async () => {
@@ -579,6 +589,15 @@ export const WorkspaceLogin = () => {
         .eq('customer_id', targetCustomer.id)
         .in('status', ['active', 'checkout_requested', 'pause_requested', 'paused'])
         .maybeSingle();
+
+      // Handle Remember Me Persistence
+      if (rememberMe) {
+        localStorage.setItem('remembered_user_code', cleanCode);
+        localStorage.setItem('remembered_user_phone', cleanPhone);
+      } else {
+        localStorage.removeItem('remembered_user_code');
+        localStorage.removeItem('remembered_user_phone');
+      }
 
       if (existingSess) {
         localStorage.setItem('workspace_session_id', existingSess.id);
@@ -1126,6 +1145,8 @@ export const WorkspaceLogin = () => {
           setBirthDate={setBirthDate}
           college={college}
           setCollege={setCollege}
+          rememberMe={rememberMe}
+          setRememberMe={setRememberMe}
           customCollege={customCollege}
           setCustomCollege={setCustomCollege}
           showCustomCollege={showCustomCollege}

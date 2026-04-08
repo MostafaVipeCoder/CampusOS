@@ -115,7 +115,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     try {
       const { data, error } = await (supabase as any)
         .from('workspace_sessions')
-        .select(`*, customers(full_name, loyalty_points, cashback_balance, college, company_members(*, companies(*)), subscriptions(*))`)
+        .select(`*, services(code, name_ar), customers(full_name, loyalty_points, cashback_balance, college, company_members(*, companies(*)), subscriptions(*))`)
         .eq('branch_id', branchId || '')
         .in('status', ['active', 'checkout_requested', 'pause_requested', 'paused', 'resume_requested'])
         .order('start_time', { ascending: false });
@@ -749,11 +749,14 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                       <td className="py-6 px-6">
                         <div className="flex flex-row-reverse items-center justify-end gap-3 text-right">
                           <div className="text-right">
-                            <div className="font-extrabold text-slate-900 text-lg">
+                            <div className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
+                              {session.services ? (
+                                <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">{session.services.code}</span>
+                              ) : null}
                               {session.customers?.full_name || (session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'مستخدم غير مسجل')}
                             </div>
                             <div className="flex flex-row-reverse items-center gap-2 mt-1">
-                               <div className="text-sm font-black text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-lg w-fit">{session.user_code}</div>
+                               <div className="text-sm font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded-lg w-fit">{session.user_code}</div>
                                {activeSub && (
                                   <div className="flex flex-row-reverse items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black animate-pulse">
                                      <Sparkles size={10} />
