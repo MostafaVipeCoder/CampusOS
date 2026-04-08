@@ -93,8 +93,13 @@ export const KitchenKiosk = () => {
       
       if (invItems) {
           const activeItems = invItems.filter((item: any) => {
-              const hasCatering = Array.isArray(item.catering_items) && item.catering_items.length > 0;
-              if (hasCatering && item.catering_items[0].is_active === false) return false;
+              if (item.stock <= 0) return false;
+              if (Array.isArray(item.catering_items) && item.catering_items.length > 0) {
+                  return item.catering_items[0].is_active !== false;
+              } else if (item.catering_items && !Array.isArray(item.catering_items)) {
+                  return (item.catering_items as any).is_active !== false;
+              }
+              if (item.is_active === false) return false;
               return true;
           });
           setProducts(activeItems);

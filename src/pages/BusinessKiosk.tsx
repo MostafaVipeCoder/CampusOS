@@ -62,10 +62,22 @@ export const BusinessKiosk = () => {
   const fetchProducts = async () => {
     const { data } = await (supabase as any)
       .from('inventory')
-      .select('*')
+      .select('*, catering_items(is_active)')
+      .gt('stock', 0)
       .in('category', ['مطبخ وبوفيه', 'مشروبات', 'سناكس'])
       .order('name');
-    setProducts(data || []);
+      
+    const activeProducts = (data || []).filter((item: any) => {
+        if (item.stock <= 0) return false;
+        if (Array.isArray(item.catering_items) && item.catering_items.length > 0) {
+            return item.catering_items[0].is_active !== false;
+        } else if (item.catering_items && !Array.isArray(item.catering_items)) {
+            return (item.catering_items as any).is_active !== false;
+        }
+        if (item.is_active === false) return false;
+        return true;
+    });
+    setProducts(activeProducts);
   };
 
   const fetchHistory = async (memberId: string) => {

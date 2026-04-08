@@ -114,11 +114,12 @@ export const WorkspaceLogin = () => {
 
   const fetchStoreItems = async () => {
     try {
-      // Direct fetch from inventory favoring selling_price > 0
+      // Direct fetch from inventory favoring selling_price > 0 and stock > 0
       let query = supabase
         .from('inventory')
-        .select('*')
-        .gt('selling_price', 0);
+        .select('*, catering_items(is_active)')
+        .gt('selling_price', 0)
+        .gt('stock', 0);
       
       if (branchId) {
         query = query.eq('branch_id', branchId);
@@ -127,7 +128,19 @@ export const WorkspaceLogin = () => {
       const { data, error } = await query.order('name');
       
       if (error) throw error;
-      setCateringItems(data || []);
+      
+      const activeItems = (data || []).filter((item: any) => {
+          if (item.stock <= 0) return false; // Auto-hide ended products
+          
+          if (Array.isArray(item.catering_items) && item.catering_items.length > 0) {
+              return item.catering_items[0].is_active !== false;
+          } else if (item.catering_items && !Array.isArray(item.catering_items)) {
+              return (item.catering_items as any).is_active !== false;
+          }
+          if (item.is_active === false) return false;
+          return true;
+      });
+      setCateringItems(activeItems);
     } catch (err) {
       console.error('Error fetching store items:', err);
     }

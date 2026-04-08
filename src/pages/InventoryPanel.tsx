@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { Package, Search, Filter, TrendingUp, AlertTriangle, ArrowDown, ArrowUp, RefreshCcw, Coffee, Cookie, Sparkles, Printer, Trash2, Plus, X, Edit, Save, Image as ImageIcon } from 'lucide-react';
+import { Package, Search, Filter, TrendingUp, AlertTriangle, ArrowDown, ArrowUp, RefreshCcw, Coffee, Cookie, Sparkles, Printer, Trash2, Plus, X, Edit, Save, Image as ImageIcon, Check } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardContent, Badge, Input, Modal } from '../components/ui';
 import { supabase } from '../lib/supabase';
 
@@ -33,6 +32,31 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
     const [sellPriceStr, setSellPriceStr] = useState('');
     const [cartonQuantityStr, setCartonQuantityStr] = useState('0');
     const [editCartonQuantityStr, setEditCartonQuantityStr] = useState('0');
+    
+    // Inventory Audit / Reconciliation States
+    const [isReconMode, setIsReconMode] = useState(false);
+    const [physicalCounts, setPhysicalCounts] = useState<Record<string, number>>({});
+    const [isReconSubmitting, setIsReconSubmitting] = useState(false);
+    
+    // Financial Summary States
+    const [itemSummary, setItemSummary] = useState<{
+        totalRevenue: number,
+        totalLossesQty: number,
+        totalLossesVal: number,
+        netProfit: number,
+        lastAuditDate: string | null,
+        daysInStock: number,
+        avgSalesPerDay: number,
+        entryDate: string | null,
+        history: any[]
+    } | null>(null);
+    const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+    const [globalSummary, setGlobalSummary] = useState<{
+        totalSalesRev: number,
+        totalSalesQty: number,
+        totalLossVal: number,
+        totalLossQty: number
+    }>({ totalSalesRev: 0, totalSalesQty: 0, totalLossVal: 0, totalLossQty: 0 });
 
     useEffect(() => {
         fetchInventory();
@@ -76,6 +100,28 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
             }));
 
             setStockItems(mappedData);
+
+            // Fetch Branch-wide loss logs
+            let lossQuery = supabase.from('inventory_logs').select('*').eq('type', 'loss');
+            if (branchId) lossQuery = lossQuery.eq('branch_id', branchId);
+            const { data: globalLossLogs } = await lossQuery;
+            
+            const totalLossQty = (globalLossLogs || []).reduce((sum, log) => sum + Math.abs(log.quantity), 0);
+            const totalLossVal = (globalLossLogs || []).reduce((sum, log) => {
+                const item = mappedData.find(i => i.id === log.inventory_id);
+                return sum + (Math.abs(log.quantity) * (log.cost_per_piece || item?.price || 0));
+            }, 0);
+
+            const totalSalesQty = Object.values(soldCounts).reduce((a, b) => a + b, 0);
+            const totalSalesRev = mappedData.reduce((sum, item) => sum + (item.total_sold * (item.selling_price || 0)), 0);
+
+            setGlobalSummary({
+                totalSalesRev,
+                totalSalesQty,
+                totalLossVal,
+                totalLossQty
+            });
+
         } catch (error) {
             console.error('Error fetching inventory:', error);
         } finally {
@@ -234,7 +280,61 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
         }
     };
 
-    const handleEditClick = (item: any) => {
+    const handleFinalizeReconciliation = async () => {
+        const changedIds = Object.keys(physicalCounts);
+        if (changedIds.length === 0) {
+            setIsReconMode(false);
+            return;
+        }
+
+        if (!window.confirm(`هل أنت متأكد من تحديث ${changedIds.length} صنف بناءً على الجرد الفعلي؟ سيتم تعديل المخزن وتسجيل الفرق.`)) return;
+
+        setIsReconSubmitting(true);
+        try {
+            for (const id of changedIds) {
+                const item = stockItems.find(i => i.id === id);
+                if (!item) continue;
+
+                const actual = physicalCounts[id];
+                const diff = actual - item.stock;
+
+                if (diff === 0) continue;
+
+                // Update official stock
+                const { error: invError } = await supabase
+                    .from('inventory')
+                    .update({ stock: actual })
+                    .eq('id', id);
+
+                if (invError) throw invError;
+
+                // Log discrepancy with details (From X to Y)
+                const { error: logError } = await supabase.from('inventory_logs').insert([{
+                    inventory_id: id,
+                    branch_id: branchId || null,
+                    quantity: diff,
+                    type: diff < 0 ? 'loss' : 'restock',
+                    notes: `جرد فعلي: تعديل من ${item.stock} إلى ${actual} (الفرق: ${diff > 0 ? '+' : ''}${diff} قطعة)`,
+                    cost_per_piece: item.price || 0
+                }]);
+
+                if (logError) throw logError;
+            }
+
+            setPhysicalCounts({});
+            setIsReconMode(false);
+            await fetchInventory();
+            await fetchLogs();
+            alert('تم اعتماد الجرد وتحديث المخزن بنجاح. يمكنك الآن رؤية تفاصيل العجز والخسائر في "سجل الرقابة" أسفل الصفحة.');
+        } catch (err: any) {
+            console.error(err);
+            alert('خطأ أثناء تحديث الجرد: ' + err.message);
+        } finally {
+            setIsReconSubmitting(false);
+        }
+    };
+
+    const handleEditClick = async (item: any) => {
         const itemCopy = { 
             ...item, 
             selling_price: item.selling_price || item.catering_items?.[0]?.price || 0,
@@ -245,6 +345,48 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
         setSellPriceStr((itemCopy.selling_price || 0).toString());
         setEditCartonQuantityStr((itemCopy.stock / (itemCopy.pieces_per_unit || 1)).toString());
         setIsEditModalOpen(true);
+        fetchProductSummary(item.id, itemCopy);
+    };
+
+    const fetchProductSummary = async (itemId: string, itemData: any) => {
+        try {
+            // 1. Fetch all audit logs (loss and restock) for history timeline
+            const { data: allLogs } = await supabase
+                .from('inventory_logs')
+                .select('*')
+                .eq('inventory_id', itemId)
+                .order('created_at', { ascending: false });
+            
+            const lossLogs = (allLogs || []).filter(log => log.type === 'loss');
+            const totalLossQty = lossLogs.reduce((sum, log) => sum + Math.abs(log.quantity), 0);
+            const totalLossVal = lossLogs.reduce((sum, log) => sum + (Math.abs(log.quantity) * (log.cost_per_piece || itemData.price || 0)), 0);
+            
+            const entryDateStr = itemData.last_restock || itemData.created_at;
+            const entryDate = new Date(entryDateStr);
+            const today = new Date();
+            const timeDiff = today.getTime() - entryDate.getTime();
+            const daysInStock = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24)));
+            
+            const avgSalesPerDay = (itemData.total_sold || 0) / daysInStock;
+
+            const totalRevenue = (itemData.total_sold || 0) * (itemData.selling_price || 0);
+            const totalCost = (itemData.total_sold || 0) * (itemData.price || 0);
+            const operationalProfit = totalRevenue - totalCost;
+
+            setItemSummary({
+                totalRevenue,
+                totalLossesQty: totalLossQty,
+                totalLossesVal: totalLossVal,
+                netProfit: operationalProfit - totalLossVal,
+                lastAuditDate: (allLogs || []).find(l => l.type === 'loss' || l.type === 'restock')?.created_at || null,
+                daysInStock,
+                avgSalesPerDay,
+                entryDate: entryDateStr,
+                history: (allLogs || []).filter(l => ['loss', 'restock', 'correction'].includes(l.type)).slice(0, 5)
+            });
+        } catch (err) {
+            console.error('Error fetching item summary:', err);
+        }
     };
 
     const handleUpdateItem = async (e: React.FormEvent) => {
@@ -283,12 +425,23 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
             console.log("Updated DB row:", data?.[0]);
 
             // Sync with catering_items for compatibility
-            await supabase.from('catering_items').update({
+            const caterPayload = {
                 name: editingItem.name,
                 price: sellingPriceVal,
                 category: editingItem.category === 'مشروبات' ? 'beverages' : (editingItem.category === 'سناكس' ? 'snacks' : 'office'),
                 is_active: editingItem.is_active !== undefined ? editingItem.is_active : true
-            }).eq('inventory_id', targetId);
+            };
+            
+            const { data: existCater } = await supabase.from('catering_items').select('id').eq('inventory_id', targetId).maybeSingle();
+            if (existCater) {
+                await supabase.from('catering_items').update(caterPayload).eq('id', existCater.id);
+            } else {
+                await supabase.from('catering_items').insert({
+                    ...caterPayload,
+                    inventory_id: targetId,
+                    branch_id: branchId || null
+                });
+            }
 
             await fetchInventory();
             await fetchLogs();
@@ -307,6 +460,45 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
 
     return (
         <div className="space-y-8 animate-in fade-in duration-700 font-['Cairo'] text-right">
+            {/* Global Financial Summary Section */}
+            <div className="bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-sm relative overflow-hidden">
+                <div className="absolute left-0 top-0 w-[500px] h-[500px] bg-slate-50/50 rounded-full blur-[100px] -translate-x-1/2 -translate-y-1/2" />
+                <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-8">
+                    <div>
+                        <h1 className="text-3xl font-black text-slate-900 tracking-tighter">إحصائيات الأداء المالي والفاقد</h1>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-2">Full Financial Branch Performance & Auditing Summary</p>
+                    </div>
+                    <div className="flex flex-wrap gap-4 md:gap-8 bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
+                        <div className="text-center md:text-right md:border-l md:border-slate-200 md:pl-8">
+                            <p className="text-[9px] font-black text-emerald-500 uppercase mb-2">إجمالي الإيرادات (المبيعات)</p>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-black text-slate-900 font-mono">{globalSummary.totalSalesRev.toLocaleString()}</span>
+                                <span className="text-[10px] text-slate-400 font-bold">EGP</span>
+                            </div>
+                            <p className="text-[8px] text-slate-400 mt-1 font-bold">من {globalSummary.totalSalesQty} معاملة بيع</p>
+                        </div>
+                        <div className="text-center md:text-right md:border-l md:border-slate-200 md:pl-8">
+                            <p className="text-[9px] font-black text-rose-500 uppercase mb-2">إجمالي العجز (الخسائر)</p>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-black text-rose-600 font-mono">-{globalSummary.totalLossVal.toLocaleString()}</span>
+                                <span className="text-[10px] text-rose-300 font-bold">EGP</span>
+                            </div>
+                            <p className="text-[8px] text-slate-400 mt-1 font-bold">نقص {globalSummary.totalLossQty} قطعة في الجرد</p>
+                        </div>
+                        <div className="text-center md:text-right">
+                            <p className="text-[9px] font-black text-indigo-500 uppercase mb-2">صافي الربح التشغيلي</p>
+                            <div className="flex items-baseline gap-1">
+                                <span className={`text-3xl font-black font-mono ${(globalSummary.totalSalesRev - globalSummary.totalLossVal) >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                    {(globalSummary.totalSalesRev - globalSummary.totalLossVal).toLocaleString()}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-bold">EGP</span>
+                            </div>
+                            <p className="text-[8px] text-slate-400 mt-1 font-bold">محسوب بعد خصم الفاقد</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <Card className="border-none shadow-sm rounded-[2.5rem] bg-white p-6 relative overflow-hidden group">
                     <div className="absolute right-0 top-0 w-24 h-24 bg-slate-50 rounded-full -translate-y-12 translate-x-12 blur-2xl group-hover:bg-slate-100 transition-colors"></div>
@@ -440,12 +632,30 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
                     />
                 </div>
                 
-                <button
-                    onClick={() => setIsAddModalOpen(true)}
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20"
-                >
-                    <Plus size={20} /> إضافة صنف
-                </button>
+                <div className="flex gap-4">
+                    <button 
+                        onClick={() => setIsReconMode(!isReconMode)}
+                        className={`flex items-center gap-2 px-8 py-4 rounded-2xl font-black text-sm transition-all shadow-lg ${isReconMode ? 'bg-rose-600 text-white shadow-rose-200' : 'bg-white border-2 border-slate-100 text-slate-700 hover:border-indigo-500'}`}
+                    >
+                        {isReconMode ? <X size={18} /> : <TrendingUp size={18} />}
+                        {isReconMode ? 'إلغاء الجرد' : 'بدء جرد فعلي (تدريد)'}
+                    </button>
+                    {!isReconMode && (
+                        <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-slate-900 border-t-2 border-white/10 text-white px-8 py-4 rounded-2xl font-black text-sm hover:bg-black transition-all shadow-xl shadow-slate-200 active:scale-95">
+                            <Plus size={18} /> اضافة صنف جديد
+                        </button>
+                    )}
+                    {isReconMode && (
+                        <button 
+                            onClick={handleFinalizeReconciliation}
+                            disabled={isReconSubmitting || Object.keys(physicalCounts).length === 0}
+                            className="flex items-center gap-2 bg-emerald-600 border-t-2 border-white/10 text-white px-8 py-4 rounded-2xl font-black text-sm hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-200 active:scale-95 disabled:opacity-50"
+                        >
+                            {isReconSubmitting ? <RefreshCcw className="animate-spin" size={18} /> : <Save size={18} />}
+                            اعتماد الجرد ({Object.keys(physicalCounts).length} تعديل)
+                        </button>
+                    )}
+                </div>
             </div>
 
             <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)}>
@@ -669,6 +879,74 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
                                 <p className="text-[8px] text-indigo-300 mt-2">إجمالي الدخل المتوقع عند البيع</p>
                             </div>
                         </div>
+
+                        {itemSummary && (
+                            <>
+                            <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-6 mb-4 relative overflow-hidden">
+                                <div className="flex justify-between items-center mb-6">
+                                    <div className="text-right">
+                                        <h3 className="text-lg font-black text-slate-900">تحليل الأداء المالي والفاقد</h3>
+                                        <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Financial Performance Summary</p>
+                                    </div>
+                                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shadow-sm border border-indigo-100">
+                                        <TrendingUp size={18} />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-4 mb-6">
+                                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                        <p className="text-[8px] text-slate-400 font-black uppercase mb-1 text-center">الإيرادات</p>
+                                        <p className="text-lg font-black text-indigo-600 text-center">{itemSummary.totalRevenue.toLocaleString()} <span className="text-[9px]">EGP</span></p>
+                                        <p className="text-[7px] text-slate-500 font-bold mt-1 tracking-tighter text-center">من {editingItem.total_sold} مبيعات</p>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                        <p className="text-[8px] text-rose-500 font-black uppercase mb-1 text-center">إجمالي العجز</p>
+                                        <p className="text-lg font-black text-rose-600 text-center">{itemSummary.totalLossesVal.toLocaleString()} <span className="text-[9px]">EGP</span></p>
+                                        <p className="text-[7px] text-rose-400 font-bold mt-1 tracking-tighter text-center">نقص {itemSummary.totalLossesQty} قطعة</p>
+                                    </div>
+                                    <div className={`p-4 rounded-2xl border shadow-sm text-center ${itemSummary.netProfit >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
+                                        <p className={`text-[8px] font-black uppercase mb-1 ${itemSummary.netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>صافي الأرباح</p>
+                                        <p className={`text-lg font-black ${itemSummary.netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{itemSummary.netProfit.toLocaleString()} <span className="text-[9px]">EGP</span></p>
+                                        <p className="text-[7px] text-slate-500 font-bold mt-1 tracking-tighter text-center">بعد خصم الفاقد</p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 bg-white/60 p-4 rounded-2xl border border-slate-100">
+                                    <div className="border-l border-slate-100 pl-4">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <p className="text-[9px] font-black text-slate-400">مدة التواجد</p>
+                                            <Badge className="bg-slate-100 text-slate-500 border-none text-[8px]">{itemSummary.daysInStock} يوم</Badge>
+                                        </div>
+                                        <p className="text-[8px] text-slate-400 font-bold">دخل المخزن بتاريخ: {new Date(itemSummary.entryDate || '').toLocaleDateString('ar-EG')}</p>
+                                    </div>
+                                    <div className="pr-4">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <p className="text-[9px] font-black text-indigo-500">معدل البيع اليومي</p>
+                                            <Badge className="bg-indigo-50 text-indigo-600 border-none text-[8px]">{itemSummary.avgSalesPerDay.toFixed(1)} قطعة/يوم</Badge>
+                                        </div>
+                                        <p className="text-[8px] text-slate-400 font-bold">معدل استهلاك من إجمالي المخزون</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {itemSummary.history.length > 0 && (
+                                <div className="mb-8 px-4">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 pr-2">آخر عمليات الجرد والتعديل</p>
+                                    <div className="space-y-2">
+                                        {itemSummary.history.map((log, lidx) => (
+                                            <div key={lidx} className="flex justify-between items-center bg-slate-50/50 p-2 rounded-xl border border-slate-100">
+                                                <div className="flex items-center gap-2">
+                                                    <div className={`w-1.5 h-1.5 rounded-full ${log.type === 'loss' ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                                                    <span className="text-[10px] text-slate-600 font-bold">{log.notes}</span>
+                                                </div>
+                                                <span className="text-[9px] text-slate-400 font-mono">{new Date(log.created_at).toLocaleDateString('ar-EG')}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            </>
+                        )}
                         
                         <div className="bg-slate-50 rounded-2xl p-4 mb-6 grid grid-cols-2 gap-4 border border-slate-100 italic">
                              <div className="border-l border-slate-200 pr-2">
@@ -875,10 +1153,12 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-widest text-center">
                             <th className="px-8 py-6 text-right">إسم الصنف</th>
-                            <th className="px-6 py-6 text-center">إجمالي المبيعات</th>
-                            <th className="px-6 py-6 text-center">الرصيد المتاح</th>
-                            <th className="px-6 py-6 text-center text-rose-600 font-black">سعر البيع</th>
-                            <th className="px-6 py-6 text-center">تحليل الربح</th>
+                            {!isReconMode && <th className="px-6 py-6 text-center">إجمالي المبيعات</th>}
+                            <th className="px-6 py-6 text-center">رصيد السيستم</th>
+                            {isReconMode && <th className="px-6 py-6 text-center text-indigo-600 font-black">الجرد الفعلي</th>}
+                            {isReconMode && <th className="px-6 py-6 text-center text-rose-600 font-black">العجز / الخسائر</th>}
+                            {!isReconMode && <th className="px-6 py-6 text-center text-rose-600 font-black">سعر البيع</th>}
+                            {!isReconMode && <th className="px-6 py-6 text-center">تحليل الربح</th>}
                             <th className="px-6 py-6">حالة المخزون</th>
                             <th className="px-8 py-6 text-left">إجراء</th>
                         </tr>
@@ -886,147 +1166,317 @@ export const InventoryPanel = ({ branchId }: { branchId?: string }) => {
                     <tbody className="divide-y divide-slate-50">
                         {loading ? (
                             <tr>
-                                <td colSpan={7} className="py-20 text-center">
-                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                                <td colSpan={10} className="py-40 text-center">
+                                    <div className="flex flex-col items-center gap-4">
+                                        <RefreshCcw className="animate-spin text-indigo-500" size={40} />
+                                        <p className="text-slate-400 font-black animate-pulse font-['Cairo']">جاري تحميل البيانات وتحليل المخزون...</p>
+                                    </div>
                                 </td>
                             </tr>
                         ) : filteredItems.length > 0 ? (
                             filteredItems.map((item, idx) => (
-                                <tr key={item.id} className="hover:bg-slate-50 transition-all group animate-in slide-in-from-right duration-300" style={{ animationDelay: `${idx * 50}ms` }}>
-                                <td className="px-8 py-6">
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center shadow-sm ${
-                                            (item.category === 'مشروبات' || item.category === 'beverages') ? 'bg-blue-50 text-blue-600' : 
-                                            (item.category === 'سناكس' || item.category === 'snacks') ? 'bg-amber-50 text-amber-600' : 
-                                            'bg-rose-50 text-rose-600'
-                                        }`}>
-                                            {item.image_url && item.image_url.trim() !== '' ? (
-                                                <img src={item.image_url} className="w-full h-full object-cover" alt="" />
+                                <tr 
+                                    key={item.id} 
+                                    className="group hover:bg-slate-50 border-b border-slate-50 transition-all font-['Cairo']"
+                                >
+                                    <td className="px-8 py-6">
+                                        <div className="flex items-center gap-4">
+                                            {(item.stock <= (item.min_stock || 0)) && !isReconMode && (
+                                                <div className="absolute right-0 w-1 bg-rose-500 h-12 rounded-full"></div>
+                                            )}
+                                            <div className={`w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center shadow-sm ${
+                                                (item.category === 'مشروبات' || item.category === 'beverages') ? 'bg-blue-50 text-blue-600' : 
+                                                (item.category === 'سناكس' || item.category === 'snacks') ? 'bg-amber-50 text-amber-600' : 
+                                                'bg-rose-50 text-rose-600'
+                                            }`}>
+                                                {item.image_url && item.image_url.trim() !== '' ? (
+                                                    <img src={item.image_url} className="w-full h-full object-cover" alt="" />
+                                                ) : (
+                                                    (item.category === 'مشروبات' || item.category === 'beverages') ? <Coffee size={20} /> : 
+                                                    (item.category === 'سناكس' || item.category === 'snacks') ? <Cookie size={20} /> : 
+                                                    <Package size={20} />
+                                                )}
+                                            </div>
+                                            <div>
+                                                <p className="text-slate-800 font-black text-sm">{item.name}</p>
+                                                <Badge className="bg-slate-100 text-slate-500 border-none text-[8px] font-black mt-1 uppercase">
+                                                    {item.category || 'عام'}
+                                                </Badge>
+                                            </div>
+                                        </div>
+                                    </td>
+
+                                    <td className="px-6 py-6 text-center">
+                                        <div className="flex flex-col items-center">
+                                            {!isReconMode ? (
+                                                <div className="flex flex-col items-center bg-indigo-50/50 rounded-2xl p-3 border border-indigo-100 shadow-sm transition-transform hover:scale-105" title="إجمالي مبيعات الصنف منذ البداية">
+                                                    <span className="text-2xl font-black text-indigo-600 font-mono">
+                                                        {item.total_sold || 0}
+                                                    </span>
+                                                    <span className="text-[9px] text-indigo-400 font-black uppercase tracking-widest mt-0.5">قطعة مباعة</span>
+                                                </div>
                                             ) : (
-                                                (item.category === 'مشروبات' || item.category === 'beverages') ? <Coffee size={20} /> : 
-                                                (item.category === 'سناكس' || item.category === 'snacks') ? <Cookie size={20} /> : 
-                                                <Package size={20} />
+                                                <div className="bg-emerald-50/50 p-2 rounded-xl border border-emerald-100 flex flex-col gap-1 min-w-[120px]">
+                                                    <p className="text-[8px] font-black text-emerald-600 uppercase mb-1">صافي المبيعات</p>
+                                                    <p className="text-sm font-black text-emerald-700 font-mono">-{item.total_sold || 0}</p>
+                                                    <p className="text-[8px] text-emerald-400 font-bold">تم خروجها من المخزن</p>
+                                                </div>
                                             )}
                                         </div>
-                                        <div>
-                                            <p className="text-slate-800 font-black text-sm">{item.name}</p>
-                                            <Badge className="bg-slate-100 text-slate-500 border-none text-[8px] font-black mt-1">
-                                                {item.category || 'عام'}
-                                            </Badge>
+                                    </td>
+
+                                    <td className="px-6 py-6 text-center">
+                                        <div className="flex flex-col items-center font-mono">
+                                            {isReconMode ? (
+                                                <div className="bg-slate-900 text-white p-3 rounded-2xl border border-white/10 shadow-xl flex flex-col gap-1 min-w-[140px] relative overflow-hidden">
+                                                    <div className="absolute right-0 top-0 w-24 h-24 bg-white/5 rounded-full -translate-y-12 translate-x-12 blur-xl"></div>
+                                                    <div className="flex justify-between items-center text-[8px] font-black text-slate-400 uppercase relative z-10">
+                                                        <span>الوارد (تاريخياً):</span>
+                                                        <span className="text-white">{(item.stock + (item.total_sold || 0))}</span>
+                                                    </div>
+                                                    <div className="border-t border-white/5 mt-1 pt-1 flex justify-between items-center relative z-10">
+                                                        <span className="text-[9px] font-black text-indigo-300">المفروض متبقي:</span>
+                                                        <span className="text-lg font-black text-white">{item.stock}</span>
+                                                    </div>
+                                                    <p className="text-[7px] text-slate-500 font-bold mt-1 uppercase text-center">(الوارد - المباع)</p>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="flex items-baseline gap-1">
+                                                        <span className={`text-2xl font-black ${item.stock <= (item.min_stock || 0) ? 'text-rose-600' : 'text-slate-900'}`}>
+                                                            {item.stock}
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400 font-bold">قطعة</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 mt-1">
+                                                        <span className="text-[9px] text-slate-400 font-black">
+                                                            ({Math.floor(item.stock / (item.pieces_per_unit || 1))} {item.unit || 'كرتونة'})
+                                                        </span>
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
-                                    </div>
-                                </td>
-                                <td className="px-6 py-6 text-center">
-                                    <div className="flex flex-col items-center bg-indigo-50/50 rounded-2xl p-3 border border-indigo-100 shadow-sm">
-                                        <span className="text-2xl font-black text-indigo-600 font-mono">
-                                            {item.total_sold || 0}
-                                        </span>
-                                        <span className="text-[9px] text-indigo-400 font-black uppercase tracking-widest mt-0.5">قطعة مباعة</span>
-                                    </div>
-                                </td>
-                                <td className="px-6 py-6 text-center">
-                                    <div className="flex flex-col items-center">
-                                        <div className="flex items-baseline gap-1">
-                                            <span className={`text-2xl font-black ${item.stock <= (item.min_stock || 0) ? 'text-rose-600' : 'text-slate-900'} font-mono`}>
-                                                {item.stock}
-                                            </span>
-                                            <span className="text-[10px] text-slate-400 font-bold">قطعة</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 mt-1">
-                                            <span className="text-[9px] text-slate-400 font-black">
-                                                ({Math.floor(item.stock / (item.pieces_per_unit || 1))} {item.unit || 'كرتونة'})
-                                            </span>
-                                        </div>
-                                    </div>
-                                </td>
-                                 <td className="px-6 py-6 text-center text-slate-500 font-black">
-                                     <div className="flex flex-col items-center">
-                                         <span className="text-sm font-black text-rose-600 font-mono">{Number(item.selling_price).toLocaleString()}</span>
-                                         <span className="text-[8px] text-slate-400 uppercase">EGP / قطعة</span>
-                                     </div>
-                                 </td>
-                                 <td className="px-6 py-6 text-center">
-                                     <div className="flex flex-col items-center gap-1">
-                                         <div className="bg-emerald-500/10 text-emerald-600 rounded-xl px-4 py-1.5 border border-emerald-100 min-w-[120px]">
-                                             <p className="text-[8px] font-black uppercase opacity-60 mb-0.5">الربح الصافي</p>
-                                             <p className="text-sm font-black font-mono">
-                                                 +{( (Number(item.selling_price) || 0) - (Number(item.price) || 0) ).toFixed(2)}
-                                             </p>
-                                         </div>
-                                         <span className="text-[8px] text-slate-400 font-black">
-                                             Cost: {Number(item.price).toFixed(2)}
-                                         </span>
-                                     </div>
-                                 </td>
-                                <td className="px-6 py-6">
-                                    <div className="flex flex-col items-center gap-2">
-                                        <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                                            <div
-                                                className={`h-full transition-all duration-1000 ${item.stock <= (item.min_stock || 0) ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]' :
-                                                    item.stock <= (item.min_stock || 0) * 2 ? 'bg-amber-500' : 'bg-emerald-500'
+                                    </td>
+
+                                    {isReconMode && (
+                                        <td className="px-6 py-6 text-center">
+                                            <div className="relative group/recon">
+                                                <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl blur opacity-0 group-focus-within/recon:opacity-20 transition-all duration-500"></div>
+                                                <input 
+                                                    type="number"
+                                                    min="0"
+                                                    className="relative w-24 h-14 bg-white border-2 border-indigo-100 rounded-2xl text-center font-black text-indigo-600 text-xl outline-none focus:border-indigo-500 transition-all font-mono shadow-sm"
+                                                    placeholder={item.stock.toString()}
+                                                    value={physicalCounts[item.id] !== undefined ? physicalCounts[item.id] : ''}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                                        setPhysicalCounts(prev => {
+                                                            const next = { ...prev };
+                                                            if (val === undefined) delete next[item.id];
+                                                            else next[item.id] = val;
+                                                            return next;
+                                                        });
+                                                    }}
+                                                />
+                                                <p className="text-[8px] text-slate-400 font-black mt-2 uppercase">العدد الفعلي الآن</p>
+                                            </div>
+                                        </td>
+                                    )}
+
+                                    {isReconMode && (
+                                        <td className="px-6 py-6 text-center">
+                                            <div className="flex flex-col items-center">
+                                                {physicalCounts[item.id] !== undefined ? (
+                                                    (() => {
+                                                        const diff = physicalCounts[item.id] - item.stock;
+                                                        const isMissing = diff < 0;
+                                                        const lossVal = Math.abs(diff) * (Number(item.price) || 0);
+
+                                                        return (
+                                                            <div className={`p-3 rounded-2xl border-2 animate-in zoom-in-95 duration-300 ${isMissing ? 'bg-rose-50 border-rose-100 text-rose-600' : diff > 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                                                                <div className="flex items-center gap-2 mb-1 justify-center">
+                                                                    {isMissing ? <AlertTriangle size={14} /> : diff > 0 ? <Plus size={14} /> : <Check size={14} />}
+                                                                    <p className="text-xs font-black">{diff === 0 ? 'لا عجز' : `${Math.abs(diff)} قطعة ${isMissing ? 'عجز' : 'زيادة'}`}</p>
+                                                                </div>
+                                                                {isMissing && (
+                                                                    <div className="mt-1 pt-1 border-t border-rose-100 text-center">
+                                                                        <p className="text-[10px] font-black font-mono">-{lossVal.toFixed(1)} EGP</p>
+                                                                        <p className="text-[7px] uppercase font-bold opacity-60">خسارة مالية</p>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()
+                                                ) : (
+                                                    <div className="w-12 h-12 rounded-full border-2 border-dashed border-slate-200 flex items-center justify-center">
+                                                        <span className="text-slate-200 font-bold text-xs font-mono">?</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </td>
+                                    )}
+
+                                    {!isReconMode && (
+                                        <>
+                                            <td className="px-6 py-6 text-center text-slate-500 font-black">
+                                                <div className="flex flex-col items-center">
+                                                    <span className="text-sm font-black text-indigo-600 font-mono">{Number(item.selling_price).toLocaleString()}</span>
+                                                    <span className="text-[8px] text-slate-400 uppercase">بيع / قطعة</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-6 text-center">
+                                                <div className="flex flex-col items-center gap-1">
+                                                    <div className="bg-emerald-500/10 text-emerald-600 rounded-xl px-4 py-1.5 border border-emerald-100 min-w-[120px]">
+                                                        <p className="text-[8px] font-black uppercase opacity-60 mb-0.5">هامش الربح</p>
+                                                        <p className="text-sm font-black font-mono">
+                                                            +{( (Number(item.selling_price) || 0) - (Number(item.price) || 0) ).toFixed(2)}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </>
+                                    )}
+
+                                    <td className="px-6 py-6 font-['Cairo']">
+                                        <div className="flex flex-col items-center gap-2">
+                                            <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                                                <div
+                                                    className={`h-full transition-all duration-1000 ${
+                                                        item.stock <= (item.min_stock || 0) ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]' :
+                                                        item.stock <= (item.min_stock || 0) * 2 ? 'bg-amber-500' : 'bg-emerald-500'
                                                     }`}
-                                                style={{ width: `${Math.min(100, (item.stock / ((item.min_stock || 1) * 4)) * 100)}%` }}
-                                            ></div>
+                                                    style={{ width: `${Math.min(100, (item.stock / ((item.min_stock || 1) * 4)) * 100)}%` }}
+                                                ></div>
+                                            </div>
+                                            <p className={`text-[9px] font-black uppercase tracking-tighter ${item.stock <= (item.min_stock || 0) ? 'text-rose-500 animate-pulse' : 'text-slate-400'}`}>
+                                                {item.stock <= (item.min_stock || 0) ? 'تحذير: وشك النفاذ' : 'المخزون آمن'}
+                                            </p>
                                         </div>
-                                        <p className={`text-[9px] font-black uppercase tracking-tighter ${item.stock <= (item.min_stock || 0) ? 'text-rose-500 animate-pulse' : 'text-slate-400'}`}>
-                                            {item.stock <= (item.min_stock || 0) ? 'تحذير: نفاذ المخزون' : 'مستقر'}
-                                        </p>
-                                    </div>
-                                </td>
-                                <td className="px-8 py-6 text-left">
-                                    <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-all">
-                                        <button onClick={() => handleEditClick(item)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-slate-100">
-                                            <Edit size={16} />
-                                        </button>
-                                        <button onClick={() => handleDeleteItem(item.id, item.name)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-slate-100">
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
-                                </td>
+                                    </td>
+                                    <td className="px-8 py-6 text-left">
+                                        <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-all">
+                                            <button onClick={() => handleEditClick(item)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-slate-100">
+                                                <Edit size={16} />
+                                            </button>
+                                            <button onClick={() => handleDeleteItem(item.id, item.name)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-slate-100">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
-                        ))
-                    ) : (
+                            ))
+                        ) : (
                             <tr>
-                                <td colSpan={7} className="py-20 text-center text-slate-300 font-bold">
+                                <td colSpan={10} className="py-20 text-center text-slate-300 font-bold font-['Cairo']">
                                     لا توجد أصناف مسجلة
                                 </td>
                             </tr>
                         )}
                     </tbody>
                 </table>
+                {isReconMode && Object.keys(physicalCounts).length > 0 && (
+                    <div className="bg-slate-900 text-white p-8 border-t border-slate-800 flex justify-between items-center animate-in slide-in-from-bottom-5">
+                        <div>
+                            <h4 className="text-sm font-black text-rose-400 mb-1">ملخص الجرد الحالي</h4>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Live Reconciliation Preview</p>
+                        </div>
+                        <div className="flex gap-12">
+                            <div className="text-center">
+                                <p className="text-[10px] font-black text-slate-500 uppercase mb-2">إجمالي العجز (قطع)</p>
+                                <p className="text-2xl font-black text-rose-500 font-mono">
+                                    {Object.entries(physicalCounts).reduce((sum, [id, val]) => {
+                                        const item = stockItems.find(i => i.id === id);
+                                        const currentStock = Number(item?.stock || 0);
+                                        const physicalVal = Number(val || 0);
+                                        const diff = physicalVal - currentStock;
+                                        return diff < 0 ? sum + Math.abs(diff) : sum;
+                                    }, 0)}
+                                </p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-[10px] font-black text-slate-500 uppercase mb-2">إجمالي الخسارة المالية</p>
+                                <div className="flex items-baseline gap-1">
+                                    <span className="text-2xl font-black text-rose-500 font-mono">
+                                        {Object.entries(physicalCounts).reduce((sum, [id, val]) => {
+                                            const item = stockItems.find(i => i.id === id);
+                                            const currentStock = Number(item?.stock || 0);
+                                            const physicalVal = Number(val || 0);
+                                            const itemPrice = Number(item?.price || 0);
+                                            const diff = physicalVal - currentStock;
+                                            return diff < 0 ? sum + (Math.abs(diff) * itemPrice) : sum;
+                                        }, 0).toLocaleString()}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 font-bold">EGP</span>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={handleFinalizeReconciliation}
+                                disabled={isReconSubmitting}
+                                className="bg-rose-600 hover:bg-rose-700 text-white px-8 py-3 rounded-2xl font-black text-sm flex items-center gap-2 transition-all shadow-xl shadow-rose-900/40 active:scale-95"
+                            >
+                                <Check size={18} /> اعتماد الجرد وتحديث المخزن
+                            </button>
+                        </div>
+                    </div>
+                )}
             </Card>
 
-            {/* Activity Log */}
-            <div className="grid grid-cols-1 lg:grid-cols-1 gap-8">
+            {/* Audit & Loss Intelligence Log */}
+            <div className="grid grid-cols-1 gap-8">
                 <Card className="border-none shadow-sm rounded-[2.5rem] bg-white overflow-hidden">
-                    <CardHeader className="bg-slate-50/50 border-b border-slate-100">
-                        <CardTitle className="text-sm font-black flex items-center gap-2 text-indigo-600">
-                            <RefreshCcw size={16} /> سجل حركة المخزن (آخر 10 عمليات)
+                    <CardHeader className="bg-slate-50/50 border-b border-slate-100 flex flex-row justify-between items-center py-6">
+                        <CardTitle className="text-sm font-black flex items-center gap-2 text-rose-600">
+                            <AlertTriangle size={18} /> سجل الرقابة والجرد (كاشف العجز والخسائر)
                         </CardTitle>
+                        <Badge className="bg-rose-100 text-rose-600 border-none text-[10px] font-black uppercase">Audit Intelligence</Badge>
                     </CardHeader>
                     <CardContent className="p-0">
                         <div className="divide-y divide-slate-50">
-                            {logs.length > 0 ? logs.map(log => (
-                                <div key={log.id} className="p-6 flex justify-between items-center hover:bg-slate-50 transition-all">
-                                    <div className="flex items-center gap-4 text-right">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${log.type === 'Supply' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                                            {log.type === 'Supply' ? <ArrowUp size={18} /> : <ArrowDown size={18} />}
+                            {logs.filter(l => ['loss', 'restock', 'correction'].includes(l.type || '') || (l.notes && l.notes.includes('جرد'))).length > 0 ? 
+                             logs.filter(l => ['loss', 'restock', 'correction'].includes(l.type || '') || (l.notes && l.notes.includes('جرد'))).slice(0, 10).map(log => {
+                                const isProfit = log.quantity > 0;
+                                const impactVal = Math.abs(log.quantity) * (log.cost_per_piece || 0);
+                                return (
+                                    <div key={log.id} className={`p-6 flex justify-between items-center transition-all border-r-4 border-transparent ${isProfit ? 'hover:bg-emerald-50/30 hover:border-emerald-500' : 'hover:bg-rose-50/30 hover:border-rose-500'}`}>
+                                        <div className="flex items-center gap-4 text-right">
+                                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm ${isProfit ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                                {isProfit ? <ArrowUp size={20} /> : <TrendingUp size={20} className="rotate-180" />}
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-sm font-black text-slate-800">
+                                                        {(log.inventory?.name || 'صنف غير معروف')}
+                                                    </p>
+                                                    <Badge className={`${isProfit ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'} text-[8px] font-black`}>
+                                                        {Math.abs(log.quantity)} قطعة {isProfit ? 'زيادة' : 'عجز'}
+                                                    </Badge>
+                                                </div>
+                                                <p className="text-[10px] text-slate-500 font-bold mt-1">
+                                                    {log.notes}
+                                                </p>
+                                                <p className="text-[9px] text-slate-400 mt-0.5">
+                                                    {new Date(log.created_at).toLocaleString('ar-EG')}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="text-sm font-black text-slate-800">
-                                                {log.type === 'Supply' ? 'توريد' : 'صرف'} {log.inventory?.name}
+                                        <div className="text-left font-mono">
+                                            <p className={`text-sm font-black ${isProfit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                {isProfit ? '+' : '-'}{impactVal.toFixed(1)} EGP
                                             </p>
-                                            <p className="text-[10px] text-slate-400">
-                                                {new Date(log.created_at).toLocaleString('ar-EG')} {log.notes ? `| ${log.notes}` : ''}
-                                            </p>
+                                            <p className="text-[8px] text-slate-400 font-bold tracking-tighter uppercase">{isProfit ? 'Asset Gain' : 'Total Asset Loss'}</p>
                                         </div>
                                     </div>
-                                    <span className={`text-xs font-black font-mono ${log.type === 'Supply' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        {log.type === 'Supply' ? '+' : '-'}{log.quantity}
-                                    </span>
+                                );
+                            }) : (
+                                <div className="p-20 text-center flex flex-col items-center gap-4">
+                                    <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center">
+                                        <Sparkles size={32} />
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-900 font-black">المخزن متزن بالكامل</p>
+                                        <p className="text-xs text-slate-400 font-bold">لا يوجد عجز مسجل في آخر عمليات الجرد</p>
+                                    </div>
                                 </div>
-                            )) : (
-                                <div className="p-10 text-center text-slate-300 font-bold">لا توجد حركات مسجلة</div>
                             )}
                         </div>
                     </CardContent>
