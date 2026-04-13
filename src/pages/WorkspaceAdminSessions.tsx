@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, CheckCircle2, AlertCircle, RefreshCw, X, Receipt, Users2, Sparkles, Plus, Lock, Briefcase, Layout } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { calculateSessionPrice } from '../lib/pricing';
 import { Modal } from '../components/ui';
@@ -1473,8 +1474,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
         )}
       </Modal>
 
-      {/* Printable Receipt Hidden Container */}
-      {checkoutBill && (
+      {/* Printable Receipt Portal Container */}
+      {checkoutBill && createPortal(
         <div id="printable-receipt" className="hidden print:block">
           <div className="text-center mb-6">
             <h1 className="text-xl font-black mb-1">CAMPUS HUB</h1>
@@ -1539,7 +1540,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
             <p className="text-[10px] font-bold">شكراً لزيارتكم • نتمنى لكم يوماً سعيداً</p>
             <p className="text-[8px] opacity-40">Powered by CampusOS Cloud System</p>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

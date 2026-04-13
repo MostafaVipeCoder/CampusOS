@@ -91,26 +91,49 @@
   animation: fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Print Styles */
+/* Print Styles - Improved for Cross-Device Compatibility */
 @media print {
-  body * {
-    visibility: hidden;
-  }
-  #printable-receipt, #printable-receipt * {
-    visibility: visible;
-  }
-  #printable-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 80mm; /* Standard Thermal Receipt Width */
-    margin: 0 auto;
-    background: white;
-    padding: 10mm;
-    direction: rtl;
-    font-family: 'Cairo', sans-serif;
-  }
-  .no-print {
+  /* Hide all main UI components */
+  body > *:not(#printable-receipt),
+  #root > *:not(#printable-receipt),
+  .no-print,
+  nav,
+  aside,
+  header,
+  button,
+  footer,
+  .Modal-backdrop, /* If using a class for modal background */
+  [role="dialog"] {
     display: none !important;
+  }
+
+  /* Reset body and hide backgrounds */
+  body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    visibility: visible !important;
+  }
+
+  #printable-receipt {
+    display: block !important;
+    visibility: visible !important;
+    position: relative !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 5mm !important;
+    font-size: 12px !important;
+  }
+
+  /* Ensure text is black for clarity */
+  #printable-receipt * {
+    visibility: visible !important;
+    color: black !important;
+  }
+
+  /* Force width for thermal printers */
+  @page {
+    margin: 0;
+    size: auto;
   }
 }
