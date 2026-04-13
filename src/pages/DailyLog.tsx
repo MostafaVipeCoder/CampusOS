@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { CalendarDays, ShoppingBag, Clock, CheckCircle2, User, RefreshCw, X, Receipt, TrendingUp, TrendingDown, Trash2, Tag, Sparkles, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Edit3, Save, AlertCircle } from 'lucide-react';
+﻿import React, { useState, useEffect } from 'react';
+import { CalendarDays, ShoppingBag, Clock, CheckCircle2, User, RefreshCw, X, Receipt, TrendingUp, TrendingDown, Trash2, Tag, Sparkles, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Edit3, Save, AlertCircle, Printer } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { Card, CardHeader, CardTitle, CardContent, Modal } from '../components/ui';
 
@@ -31,11 +32,12 @@ interface Session {
 }
 
 // Helper Component for Desktop Table Row
-const SessionRow = ({ session, onEdit, onDelete }: { 
+const SessionRow = ({ session, onEdit, onDelete, onPrint }: { 
   key?: string, 
   session: Session, 
   onEdit: (s: Session) => void, 
-  onDelete: (id: string) => void | Promise<void> 
+  onDelete: (id: string) => void | Promise<void>,
+  onPrint: (s: Session) => void
 }) => {
   const activeSub = session.customers?.subscriptions?.find((s: any) => 
     s.status === 'Active' && 
@@ -133,14 +135,23 @@ const SessionRow = ({ session, onEdit, onDelete }: {
       <td className="px-10 py-8">
          <div className="flex items-center justify-center gap-2 lg:opacity-0 lg:group-hover:opacity-100 transition-all duration-300">
             <button 
+              onClick={() => onPrint(session)}
+              className="p-3.5 bg-white text-emerald-500 rounded-2xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm border border-slate-100 active:scale-90"
+              title="Print Receipt"
+            >
+              <Printer size={18} />
+            </button>
+            <button 
               onClick={() => onEdit(session)}
               className="p-3.5 bg-white text-indigo-400 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm border border-slate-100 active:scale-90"
+              title="Edit Session"
             >
-              <Receipt size={18} />
+              <Edit3 size={18} />
             </button>
             <button 
               onClick={() => onDelete(session.id)}
               className="p-3.5 bg-white text-rose-300 rounded-2xl hover:bg-rose-600 hover:text-white transition-all shadow-sm border border-slate-100 active:scale-90"
+              title="Delete Session"
             >
               <Trash2 size={18} />
             </button>
@@ -158,6 +169,67 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
   const [dailyClosing, setDailyClosing] = useState<any>(null);
   const [dailyNote, setDailyNote] = useState('');
   const [loading, setLoading] = useState(true);
+  const [printSession, setPrintSession] = useState<Session | null>(null);
+
+  const handlePrintReceipt = (session: Session) => {
+    // We update state to trigger the portal render, then print
+    setPrintSession(session);
+    
+    // Use a slight timeout to ensure portal is rendered
+    setTimeout(() => {
+        const receiptContent = document.getElementById('printable-receipt');
+        if (!receiptContent) return;
+
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+
+        const iframeDoc = iframe.contentWindow?.document;
+        if (!iframeDoc) return;
+
+        const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+            .map(style => style.outerHTML)
+            .join('');
+
+        iframeDoc.open();
+        iframeDoc.write(`
+            <html>
+                <head>
+                    <title>Receipt history</title>
+                    ${styles}
+                    <style>
+                        body { margin: 0; padding: 0; background: white; }
+                        #printable-receipt { 
+                            display: block !important; 
+                            visibility: visible !important;
+                            width: 80mm !important;
+                            padding: 8mm !important;
+                            margin: 0 !important;
+                            font-family: 'Cairo', sans-serif;
+                            direction: rtl;
+                        }
+                        #printable-receipt * { height: auto !important; visibility: visible !important; }
+                    </style>
+                </head>
+                <body dir="rtl">
+                    <div id="printable-receipt">
+                        ${receiptContent.innerHTML}
+                    </div>
+                </body>
+            </html>
+        `);
+        iframeDoc.close();
+
+        setTimeout(() => {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+                setPrintSession(null);
+            }, 1000);
+        }, 500);
+    }, 100);
+  };
   
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   
@@ -583,6 +655,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                     setEditNotes(s.notes || '');
                   }}
                   onDelete={handleDeleteSession}
+                  onPrint={handlePrintReceipt}
                 />
               ))}
             </tbody>
@@ -620,28 +693,37 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                           <p className="text-[10px] font-black text-slate-400 mt-1">{session.user_code}</p>
                        </div>
                     </div>
-                    <div className="flex gap-2">
-                       <button 
-                         onClick={() => {
-                            setEditingSession(session);
-                            setEditStartTime(toCairoInput(session.start_time));
-                            setEditEndTime(toCairoInput(session.end_time));
-                            setEditCatering(session.catering_amount.toString());
-                            setEditTotal(session.total_amount?.toString() || '0');
-                            setEditOrders(session.orders || []);
-                            setEditNotes(session.notes || '');
-                         }}
-                         className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl active:scale-90"
-                       >
-                         <Receipt size={16} />
-                       </button>
-                       <button 
-                         onClick={() => handleDeleteSession(session.id)}
-                         className="p-2.5 bg-rose-50 text-rose-500 rounded-xl active:scale-90"
-                       >
-                         <Trash2 size={16} />
-                       </button>
-                    </div>
+                                         <div className="flex gap-2">
+                        <button 
+                          onClick={() => handlePrintReceipt(session)}
+                          className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl active:scale-90"
+                          title="Print Receipt"
+                        >
+                          <Printer size={16} />
+                        </button>
+                        <button 
+                          onClick={() => {
+                             setEditingSession(session);
+                             setEditStartTime(toCairoInput(session.start_time));
+                             setEditEndTime(toCairoInput(session.end_time));
+                             setEditCatering(session.catering_amount.toString());
+                             setEditTotal(session.total_amount?.toString() || `0`);
+                             setEditOrders(session.orders || []);
+                             setEditNotes(session.notes || ``);
+                          }}
+                          className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl active:scale-90"
+                          title="Edit Session"
+                        >
+                          <Edit3 size={16} />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteSession(session.id)}
+                          className="p-2.5 bg-rose-50 text-rose-500 rounded-xl active:scale-90"
+                          title="Delete Session"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                     </div>
                   </div>
 
                   {activeSub && (
@@ -905,6 +987,73 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
              </div>
           </div>
       </Modal>
+      {/* Printable Receipt Portal Container */}
+      {printSession && createPortal(
+        <div id="printable-receipt" style={{ display: `none` }}>
+          <div className="text-center mb-6">
+            <h1 className="text-xl font-black mb-1">CAMPUS HUB</h1>
+            <p className="text-[10px] font-bold">بوابة الخدمات الطلابية المتكاملة</p>
+            <div className="border-b-2 border-slate-900 my-4" />
+          </div>
+
+          <div className="space-y-3 mb-6">
+            <div className="flex justify-between text-xs">
+              <span className="font-bold">رقم الجلسة:</span>
+              <span>{printSession.id.slice(0,8).toUpperCase()}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="font-bold">التاريخ:</span>
+              <span>{new Date(printSession.start_time).toLocaleDateString(`ar-EG`, { timeZone: `Africa/Cairo` })}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="font-bold">العميل / الغرفة:</span>
+              <span>{printSession.services?.name_ar || printSession.user_name || printSession.customers?.full_name || `مستخدم`}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="font-bold">الكود:</span>
+              <span>{printSession.user_code}</span>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-900 pt-4 mb-4">
+            <div className="flex justify-between text-xs font-black mb-2">
+              <span>البند</span>
+              <span>المبلغ</span>
+            </div>
+            <div className="flex justify-between text-[11px] mb-2">
+               <span>استخدام المكان</span>
+               <span>{Number(printSession.total_amount || 0) - Number(printSession.catering_amount || 0)} EGP</span>
+            </div>
+            {printSession.orders && printSession.orders.length > 0 && (
+              <div className="space-y-1">
+                {printSession.orders.map((o, i) => (
+                  <div key={i} className="flex justify-between text-[10px]">
+                    <span>{o.name} x{o.quantity || 1}</span>
+                    <span>{Number(o.price || 0) * (o.quantity || 1)} EGP</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t-2 border-double border-slate-900 pt-4 space-y-2">
+            <div className="flex justify-between text-lg font-black pt-2">
+              <span>الإجمالي:</span>
+              <span>{printSession.total_amount || 0} EGP</span>
+            </div>
+            <div className="flex justify-between text-[8px] font-bold text-slate-400">
+               <span>طريقة الدفع:</span>
+               <span>{printSession.payment_method === `subscription` ? `Package (Hours)` : `Cash / Wallet`}</span>
+            </div>
+          </div>
+
+          <div className="mt-8 text-center space-y-2 border-t border-slate-100 pt-6">
+            <p className="text-[10px] font-bold">إيصال مستخرج من سجلات الجلسات</p>
+            <p className="text-[8px] opacity-40">Powered by CampusOS Cloud System</p>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

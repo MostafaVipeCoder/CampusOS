@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Clock, CheckCircle2, AlertCircle, RefreshCw, X, Receipt, Users2, Sparkles, Plus, Lock, Briefcase, Layout } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
@@ -201,6 +201,25 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
       console.error('Error fetching inventory:', err);
     }
   };
+
+    const handlePrintReceipt = () => {
+        const receiptContent = document.getElementById(`printable-receipt`);
+        if (!receiptContent) return;
+        const iframe = document.createElement(`iframe`);
+        iframe.style.display = `none`;
+        document.body.appendChild(iframe);
+        const iframeDoc = iframe.contentWindow?.document;
+        if (!iframeDoc) return;
+        const styles = Array.from(document.querySelectorAll(`style, link[rel="stylesheet"]`)).map(s => s.outerHTML).join(``);
+        iframeDoc.open();
+        iframeDoc.write(`<html><head><title>Receipt</title>${styles}<style>body { margin: 0; padding: 0; background: white; } #printable-receipt { display: block !important; visibility: visible !important; width: 80mm !important; padding: 8mm !important; margin: 0 !important; font-family: "Cairo", sans-serif; direction: rtl; } #printable-receipt * { height: auto !important; visibility: visible !important; }</style></head><body dir="rtl"><div id="printable-receipt">${receiptContent.innerHTML}</div></body></html>`);
+        iframeDoc.close();
+        setTimeout(() => {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+            setTimeout(() => { document.body.removeChild(iframe); }, 1000);
+        }, 500);
+    };
 
   const handlePrepareCheckout = (session: Session | any) => {
     const endTime = (session.status === 'checkout_requested' && session.end_time) 
@@ -1464,7 +1483,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                   تحصيل المبلـغ
                 </button>
                 <button
-                  onClick={() => window.print()}
+                  onClick={handlePrintReceipt}
                   className="py-5 bg-slate-100 text-slate-600 font-black rounded-3xl hover:bg-slate-200 transition-all text-sm"
                 >
                   طباعة التذكرة
@@ -1476,7 +1495,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
 
       {/* Printable Receipt Portal Container */}
       {checkoutBill && createPortal(
-        <div id="printable-receipt" className="hidden print:block">
+        <div id="printable-receipt" style={{ display: 'none' }}>
           <div className="text-center mb-6">
             <h1 className="text-xl font-black mb-1">CAMPUS HUB</h1>
             <p className="text-[10px] font-bold">بوابة الخدمات الطلابية المتكاملة</p>

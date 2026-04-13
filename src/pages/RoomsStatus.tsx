@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Clock, Users, ArrowRight, X, Loader2, CheckCircle2, AlertCircle, Calendar, Plus, Edit, Receipt } from 'lucide-react';
+import { Clock, Users, ArrowRight, X, Loader2, CheckCircle2, AlertCircle, Calendar, Plus, Edit, Receipt, Printer } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { RoomsDatabase } from './RoomsDatabase';
 
 interface Room {
@@ -41,6 +42,57 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
   // Manual Override States
   const [overrideDuration, setOverrideDuration] = useState('');
   const [overrideRoomAmount, setOverrideRoomAmount] = useState('');
+
+  const handlePrintA4Receipt = () => {
+       const customerName = prompt("أدخل اسم العميل (الذي سيظهر في الفاتورة):", showReceipt.userName);
+       if (customerName === null) return;
+       const nameDisplay = document.getElementById(`client-name-display`);
+       if (nameDisplay) nameDisplay.innerText = customerName;
+       const receiptContent = document.getElementById(`printable-receipt`);
+       if (!receiptContent) return;
+       const iframe = document.createElement(`iframe`);
+       iframe.style.display = `none`;
+       document.body.appendChild(iframe);
+       const iframeDoc = iframe.contentWindow?.document;
+       if (!iframeDoc) return;
+       const styles = Array.from(document.querySelectorAll(`style, link[rel="stylesheet"]`)).map(style => style.outerHTML).join(``);
+       iframeDoc.open();
+       iframeDoc.write(`
+           <html>
+               <head>
+                   <title>A4 Receipt</title>
+                   ${styles}
+                   <style>
+                       @page { size: A4; margin: 0; }
+                       body { margin: 0; padding: 0; background: white; font-family: "Cairo", sans-serif; }
+                       #printable-receipt { 
+                           display: flex !important;
+                           flex-direction: column !important;
+                           visibility: visible !important;
+                           width: 210mm !important; 
+                           height: 297mm !important; 
+                           padding: 12mm 15mm !important; 
+                           margin: 0 auto !important; 
+                           background: white !important; 
+                           box-sizing: border-box; 
+                       }
+                       #printable-receipt * { visibility: visible !important; }
+                   </style>
+               </head>
+               <body dir="rtl">
+                   <div id="printable-receipt">
+                       ${receiptContent.innerHTML}
+                   </div>
+               </body>
+           </html>
+       `);
+       iframeDoc.close();
+       setTimeout(() => {
+           iframe.contentWindow?.focus();
+           iframe.contentWindow?.print();
+           setTimeout(() => { document.body.removeChild(iframe); }, 1000);
+       }, 500);
+   };
 
   const [editingLiveSession, setEditingLiveSession] = useState<any>(null);
 
@@ -830,9 +882,10 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-xl p-4 animate-in fade-in print:bg-white print:p-0">
            <div className="receipt-container bg-white w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 print:shadow-none print:rounded-none print:max-w-none">
               <div className="bg-slate-900 p-8 text-center text-white relative print:bg-white print:text-slate-900 print:border-b-2 print:border-slate-100">
-                  <div className="absolute top-4 right-4 print:hidden">
-                     <button onClick={() => setShowReceipt(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X size={20} /></button>
-                  </div>
+                  <div className="absolute top-4 right-4 flex gap-2 print:hidden">
+                      <button onClick={handlePrintA4Receipt} className="p-2 hover:bg-white/10 rounded-full transition-colors text-emerald-400" title="طباعة A4"><Printer size={20} /></button>
+                      <button onClick={() => setShowReceipt(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X size={20} /></button>
+                   </div>
                   <CheckCircle2 size={48} className="text-emerald-400 mx-auto mb-4 print:text-slate-900" />
                   <h3 className="text-2xl font-black">فاتورة العميل</h3>
                   <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1 print:text-slate-500">Official Payment Receipt</p>
@@ -861,7 +914,7 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
                         </div>
                         <div className="flex justify-between items-center text-xs font-bold text-slate-500">
                            <span>المدة الإجمالية</span>
-                           <span className="text-slate-800">{showReceipt.duration} دقيقة</span>
+                           <span className="text-slate-800">{(showReceipt.duration / 60).toFixed(1)} ساعة</span>
                         </div>
                         <div className="flex justify-between items-center text-xs font-black text-indigo-600 pt-2 border-t border-slate-100">
                            <span>حساب الغرفة</span>
@@ -904,10 +957,10 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
 
                  <div className="flex gap-4 print:hidden">
                     <button 
-                      onClick={() => { window.print(); }} 
+                      onClick={handlePrintA4Receipt} 
                       className="flex-1 bg-white border-2 border-slate-900 text-slate-900 py-4 rounded-2xl font-black text-xs hover:bg-slate-50 transition-all active:scale-95"
                     >
-                       تحميل PDF / طباعة
+                       طباعة فاتورة (A4)
                     </button>
                     <button 
                       onClick={() => setShowReceipt(null)}
@@ -1030,6 +1083,110 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
               </div>
            </div>
         </div>
+      )}
+      {/* Printable Receipt Portal Container (A4 Redesign) */}
+      {showReceipt && createPortal(
+        <div id="printable-receipt" className="relative h-full" style={{ display: 'none' }}>
+          {/* Header Context Bar */}
+          <div className="flex justify-between items-center text-[10px] text-slate-500 font-bold mb-10">
+             <div>{new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}</div>
+             <div className="absolute left-1/2 -translate-x-1/2 uppercase tracking-widest opacity-60">Cloud Co-Working Space</div>
+          </div>
+
+          {/* Watermark Logo */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.03] pointer-events-none select-none">
+             <img src="/logo.png" alt="watermark" className="w-[300px] grayscale" />
+          </div>
+
+          {/* Main Header */}
+          <div className="flex flex-col items-center justify-center mb-8 relative z-10">
+             <div className="mb-4">
+                <img src="/logo.png" alt="logo" className="h-20 object-contain" />
+             </div>
+             <h1 className="text-4xl font-black text-slate-900 mb-1">فاتورة العميل</h1>
+             <p className="text-[10px] font-bold tracking-[0.5em] text-slate-400 uppercase">OFFICIAL PAYMENT RECEIPT</p>
+          </div>
+
+          <div className="w-full h-1 bg-gradient-to-r from-transparent via-slate-100 to-transparent mb-8" />
+
+          {/* Service Info Bar */}
+          <div className="grid grid-cols-2 gap-20 mb-10 px-4 relative z-10">
+             <div className="text-right">
+                <p className="text-[10px] text-slate-400 font-extrabold mb-1 uppercase tracking-tighter">الخدمة / SERVICE</p>
+                <div className="flex items-center gap-2 justify-end">
+                   <p className="text-2xl font-black text-slate-900 leading-tight">{showReceipt.roomName}</p>
+                   <div className="w-2 h-2 rounded-full bg-indigo-500" />
+                </div>
+             </div>
+             <div className="text-left">
+                <p className="text-[10px] text-slate-400 font-extrabold mb-1 uppercase tracking-tighter">العميل / CLIENT</p>
+                <p className="text-2xl font-black text-slate-900 leading-tight" id="client-name-display">
+                   {showReceipt.userName} {showReceipt.userCode ? `(${showReceipt.userCode})` : ''}
+                </p>
+             </div>
+          </div>
+
+          <div className="space-y-6 flex-1 text-right">
+             {/* Room Details Section */}
+             <div className="relative pt-2">
+                <p className="text-[10px] font-black text-slate-900 mb-4 border-r-4 border-slate-900 pr-4">تفاصيل استخدام الغرفة</p>
+                <div className="bg-slate-50/50 border border-slate-100 rounded-[2rem] p-8 space-y-4 text-right">
+                   <div className="flex justify-between items-center text-base">
+                      <span className="font-bold text-slate-500">سعر الساعة</span>
+                      <span className="font-black text-slate-900">EGP {showReceipt.rate}</span>
+                   </div>
+                   <div className="flex justify-between items-center text-base">
+                      <span className="font-bold text-slate-500">المدة الإجمالية</span>
+                      <span className="font-black text-slate-900">{(showReceipt.duration / 60).toFixed(1)} ساعة</span>
+                    </div>
+                    <div className="h-px bg-slate-200 w-full" />
+                    <div className="flex justify-between items-center pt-2">
+                       <span className="text-lg font-black text-indigo-600">حساب الغرفة</span>
+                       <span className="text-xl font-black text-indigo-600">EGP {showReceipt.workspaceAmount}</span>
+                    </div>
+                 </div>
+              </div>
+
+              {/* Catering Section */}
+              {showReceipt.items && showReceipt.items.length > 0 && (
+                <div className="relative pt-2">
+                   <p className="text-[10px] font-black text-slate-900 mb-4 border-r-4 border-slate-900 pr-4">طلبات الكافتيريا</p>
+                   <div className="bg-slate-50/50 border border-slate-100 rounded-[2rem] p-8 space-y-4 text-right">
+                      {showReceipt.items.map((item: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center text-base">
+                           <span className="font-bold text-slate-500">{item.quantity} × {item.name}</span>
+                           <span className="font-black text-slate-700">EGP {Number(item.price) * item.quantity}</span>
+                        </div>
+                      ))}
+                      <div className="h-px bg-slate-200 w-full" />
+                      <div className="flex justify-between items-center pt-2">
+                         <span className="text-lg font-black text-indigo-600">حساب الكافتيريا</span>
+                         <span className="text-xl font-black text-indigo-600">EGP {showReceipt.cateringAmount}</span>
+                      </div>
+                   </div>
+                </div>
+              )}
+           </div>
+
+           {/* Final Summary Footer */}
+           <div className="flex justify-between items-end mt-10 pt-8 border-t border-slate-100 font-sans">
+              <div className="text-[10px] text-slate-400 font-bold mb-4 opacity-70 uppercase tracking-widest">
+                 {new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })} | {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+              <div className="text-right">
+                 <p className="text-[10px] font-black text-slate-400 mb-2 uppercase tracking-[0.2em] px-2">Total Amount Due</p>
+                 <div className="bg-slate-900 text-white px-8 py-3 rounded-[2rem] flex items-baseline gap-3 justify-end shadow-2xl">
+                    <span className="text-xs font-bold opacity-50 uppercase tracking-widest leading-none">EGP</span>
+                    <span className="text-6xl font-black tracking-tighter tabular-nums leading-none">{showReceipt.total}</span>
+                 </div>
+              </div>
+           </div>
+
+          <div className="mt-8 text-center opacity-30">
+             <p className="text-[10px] text-slate-900 uppercase tracking-[0.6em] font-black">Powered by CampusOS Cloud System</p>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -91,47 +91,46 @@
   animation: fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Print Styles - Improved for Cross-Device Compatibility */
+/* Print Styles - Ultra-Compatibility Mode */
 @media print {
-  /* Hide all main UI components */
-  body > *:not(#printable-receipt),
-  #root > *:not(#printable-receipt),
-  .no-print,
-  nav,
-  aside,
-  header,
-  button,
-  footer,
-  .Modal-backdrop, /* If using a class for modal background */
-  [role="dialog"] {
+  /* Hide the entire app container and any other body children */
+  body > *:not(#printable-receipt) {
     display: none !important;
+    height: 0 !important;
+    overflow: hidden !important;
   }
 
-  /* Reset body and hide backgrounds */
-  body {
-    background: white !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    visibility: visible !important;
-  }
-
+  /* Force display of the receipt */
   #printable-receipt {
     display: block !important;
     visibility: visible !important;
-    position: relative !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 5mm !important;
-    font-size: 12px !important;
+    opacity: 1 !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 10mm !important;
+    background: white !important;
+    color: black !important;
+    font-size: 11px !important;
+    direction: rtl !important;
   }
 
-  /* Ensure text is black for clarity */
+  /* Ensure all nested elements are visible */
   #printable-receipt * {
     visibility: visible !important;
+    display: block !important; /* Some browsers need this for nested divs */
     color: black !important;
   }
 
-  /* Force width for thermal printers */
+  /* Specifically handle flex items inside the receipt */
+  #printable-receipt .flex {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+  }
+
   @page {
     margin: 0;
     size: auto;
