@@ -90,3 +90,27 @@
 .animate-fade-in-up {
   animation: fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Print Styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-receipt, #printable-receipt * {
+    visibility: visible;
+  }
+  #printable-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm; /* Standard Thermal Receipt Width */
+    margin: 0 auto;
+    background: white;
+    padding: 10mm;
+    direction: rtl;
+    font-family: 'Cairo', sans-serif;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

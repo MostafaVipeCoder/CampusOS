@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Clock, CheckCircle2, AlertCircle, RefreshCw, X, Receipt, Users2, Sparkles, Plus, Lock, Briefcase, Layout } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { calculateSessionPrice } from '../lib/pricing';
@@ -784,8 +784,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                                )}
                             </div>
                             {activeSub && (
-                               <div className="mt-2 space-y-1 text-right border-r-2 border-emerald-100 pr-2 mr-1">
-                                  <p className="text-[9px] font-black text-slate-400">Ends: {new Date(activeSub.end_date).toLocaleDateString('ar-EG')}</p>
+                                <div className="mt-2 space-y-1 text-right border-r-2 border-emerald-100 pr-2 mr-1">
+                                  <p className="text-[9px] font-black text-slate-400">Ends: {new Date(activeSub.end_date).toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}</p>
                                   <p className="text-[10px] font-black text-emerald-600">Left: {(activeSub.total_hours - activeSub.used_hours).toFixed(1)}H</p>
                                 </div>
                             )}
@@ -794,11 +794,11 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                       </td>
                       <td className="py-6 px-6 font-bold text-slate-600">{session.phone_number}</td>
                       <td className="py-6 px-6 font-semibold text-slate-600">
-                        {new Date(session.start_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(session.start_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' })}
                       </td>
                       <td className="py-6 px-6">
                         <div className={`font-mono text-lg font-black flex items-center justify-end gap-2 ${session.is_paused ? 'text-amber-500' : 'text-indigo-600'}`}>
-                          {hrs}Ø³ {mins}Ø¯
+                          {hrs}س {mins}د
                           {session.is_paused && <span className="text-[10px] bg-amber-100 px-1.5 py-0.5 rounded ml-2">P</span>}
                         </div>
                       </td>
@@ -910,8 +910,11 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
           {/* Mobile Card View */}
           <div className="lg:hidden space-y-4">
             {sessions.map((session) => {
-              const diffMs = now - new Date(session.start_time).getTime();
-              const totalMins = Math.floor(diffMs / 60000);
+              const start = new Date(session.start_time).getTime();
+              const currentRefTime = session.is_paused ? new Date(session.last_pause_start).getTime() : now;
+              const totalPausedMs = (Number(session.total_paused_minutes) || 0) * 60000;
+              const diffMs = Math.max(0, currentRefTime - start - totalPausedMs);
+              const totalMins = isNaN(diffMs) ? 0 : Math.floor(diffMs / 60000);
               const hrs = Math.floor(totalMins / 60);
               const mins = totalMins % 60;
               
@@ -937,7 +940,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                       </div>
                       <div className="text-right">
                         <div className="font-black text-slate-900 text-base leading-tight">
-                          {session.services?.name_ar || session.user_name || session.customers?.full_name || (session.user_code.startsWith('NA') ? `Ø²Ø§Ø¦Ø± (${session.user_code})` : 'Ù…Ø³ØªØ®Ø¯Ù…')}
+                          {session.services?.name_ar || session.user_name || session.customers?.full_name || (session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'Ù…سØªØ®دÙ…')}
                           {session.services?.name_ar && (session.user_name || session.customers?.full_name) && (session.user_name !== session.services?.name_ar) && (
                             <span className="text-slate-400 text-[10px] font-bold block mt-1">
                                ({session.user_name || session.customers?.full_name})
@@ -950,7 +953,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                                     {session.services.code}
                                 </span>
                             )}
-                            {session.user_code} â€¢ {session.phone_number}
+                            {session.user_code} • {session.phone_number}
                         </div>
                       </div>
                     </div>
@@ -963,7 +966,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                     <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100/50">
                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 text-right">وقت البدء</p>
                        <p className="font-black text-slate-900 text-sm dir-ltr text-right">
-                         {new Date(session.start_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                         {new Date(session.start_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' })}
                        </p>
                     </div>
                     <div className="bg-indigo-50/50 rounded-2xl p-3 border border-indigo-100/30">
@@ -1469,6 +1472,75 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
             </div>
         )}
       </Modal>
+
+      {/* Printable Receipt Hidden Container */}
+      {checkoutBill && (
+        <div id="printable-receipt" className="hidden print:block">
+          <div className="text-center mb-6">
+            <h1 className="text-xl font-black mb-1">CAMPUS HUB</h1>
+            <p className="text-[10px] font-bold">بوابة الخدمات الطلابية المتكاملة</p>
+            <div className="border-b-2 border-slate-900 my-4" />
+          </div>
+
+          <div className="space-y-3 mb-6">
+            <div className="flex justify-between text-xs">
+              <span className="font-bold">رقم الجلسة:</span>
+              <span>{checkoutBill.id.slice(0,8).toUpperCase()}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="font-bold">التاريخ:</span>
+              <span>{new Date().toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' })}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="font-bold">العميل / الغرفة:</span>
+              <span>{checkoutBill.services?.name_ar || checkoutBill.user_name || checkoutBill.customers?.full_name || 'مستخدم'}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="font-bold">الكود:</span>
+              <span>{checkoutBill.user_code}</span>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-900 pt-4 mb-4">
+            <div className="flex justify-between text-xs font-black mb-2">
+              <span>البند</span>
+              <span>المبلغ</span>
+            </div>
+            <div className="flex justify-between text-[11px] mb-2">
+              <span>استخدام المكان ({Math.floor(checkoutBill.diffMinutes / 60)}h {checkoutBill.diffMinutes % 60}m)</span>
+              <span>{checkoutBill.workspaceAmount} EGP</span>
+            </div>
+            {checkoutBill.orders && checkoutBill.orders.length > 0 && (
+              <div className="space-y-1">
+                {checkoutBill.orders.map((o: any, i: number) => (
+                  <div key={i} className="flex justify-between text-[10px]">
+                    <span>{o.name} x{o.quantity || 1}</span>
+                    <span>{Number(o.price) * (o.quantity || 1)} EGP</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t-2 border-double border-slate-900 pt-4 space-y-2">
+            {checkoutBill.deductedCashback > 0 && (
+              <div className="flex justify-between text-xs font-bold text-slate-500">
+                <span>خصم مكافآت:</span>
+                <span>-{checkoutBill.deductedCashback} EGP</span>
+              </div>
+            )}
+            <div className="flex justify-between text-lg font-black pt-2">
+              <span>الإجمالي:</span>
+              <span>{checkoutBill.totalAmount} EGP</span>
+            </div>
+          </div>
+
+          <div className="mt-8 text-center space-y-2 border-t border-slate-100 pt-6">
+            <p className="text-[10px] font-bold">شكراً لزيارتكم • نتمنى لكم يوماً سعيداً</p>
+            <p className="text-[8px] opacity-40">Powered by CampusOS Cloud System</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
