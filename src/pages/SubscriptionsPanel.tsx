@@ -17,6 +17,7 @@ export const SubscriptionsPanel = ({ branchId }: { branchId?: string }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [editingSubscription, setEditingSubscription] = useState<any | null>(null);
+  const [activeTab, setActiveTab] = useState<'active' | 'history' | 'analysis'>('active');
 
   const [formData, setFormData] = useState({
     hours: 40,
@@ -301,7 +302,7 @@ export const SubscriptionsPanel = ({ branchId }: { branchId?: string }) => {
 
       {/* Table Container */}
       <div className="bg-white/70 backdrop-blur-xl rounded-[3.5rem] border border-white/60 shadow-[0_20px_50px_rgba(0,0,0,0.03)] overflow-hidden">
-        <div className="p-10 border-b border-slate-50/50 flex flex-row-reverse justify-between items-center bg-slate-50/20">
+        <div className="p-10 border-b border-slate-50/50 flex flex-col md:flex-row-reverse justify-between items-center bg-slate-50/20 gap-6">
           <div className="text-right">
              <div className="flex items-center gap-3 justify-end mb-1">
                 <Sparkles size={18} className="text-indigo-500 animate-pulse" />
@@ -309,15 +310,97 @@ export const SubscriptionsPanel = ({ branchId }: { branchId?: string }) => {
              </div>
             <p className="text-slate-400 text-xs font-bold mr-7">تحليل واستهلاك باقات المشتركين المميزين</p>
           </div>
+          
+          <div className="flex items-center justify-center gap-2 bg-slate-100/50 p-1.5 rounded-2xl w-full md:w-auto">
+             <button 
+               onClick={() => setActiveTab('active')}
+               className={`px-4 md:px-6 py-2.5 rounded-xl font-black text-xs transition-all flex-1 md:flex-none ${activeTab === 'active' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+               النشطة
+             </button>
+             <button 
+               onClick={() => setActiveTab('history')}
+               className={`px-4 md:px-6 py-2.5 rounded-xl font-black text-xs transition-all flex-1 md:flex-none ${activeTab === 'history' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+               سجل الاشتراكات
+             </button>
+             <button 
+               onClick={() => setActiveTab('analysis')}
+               className={`px-4 md:px-6 py-2.5 rounded-xl font-black text-xs transition-all flex-1 md:flex-none ${activeTab === 'analysis' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+               التحليلات
+             </button>
+          </div>
+
           <button
             onClick={() => setIsModalOpen(true)}
-            className="group flex items-center gap-4 px-10 py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black text-sm shadow-[0_15px_30px_rgba(79,70,229,0.3)] transition-all active:scale-95 hover:bg-indigo-700"
+            className="w-full md:w-auto group flex justify-center items-center gap-4 px-10 py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black text-sm shadow-[0_15px_30px_rgba(79,70,229,0.3)] transition-all active:scale-95 hover:bg-indigo-700"
           >
             <Plus size={20} className="group-hover:rotate-90 transition-transform duration-500" /> اشتراك جديد
           </button>
         </div>
 
-        <div className="overflow-x-auto text-right text-slate-700">
+        {activeTab === 'analysis' ? (
+           <div className="p-10 space-y-8 animate-in fade-in duration-500 bg-slate-50/30">
+               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm text-right hover:border-indigo-200 transition-colors">
+                       <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mb-2">إجمالي المبيعات</p>
+                       <h3 className="text-3xl font-black text-indigo-600">{subscriptions.reduce((sum, s) => sum + (s.paid || 0), 0).toLocaleString()} <span className="text-sm opacity-50">EGP</span></h3>
+                   </div>
+                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm text-right hover:border-rose-200 transition-colors">
+                       <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mb-2">إجمالي المديونيات</p>
+                       <h3 className="text-3xl font-black text-rose-600">{subscriptions.reduce((sum, s) => sum + (s.remaining || 0), 0).toLocaleString()} <span className="text-sm opacity-50">EGP</span></h3>
+                   </div>
+                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm text-right hover:border-emerald-200 transition-colors">
+                       <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mb-2">معدل الاستهلاك</p>
+                       <h3 className="text-3xl font-black text-emerald-600">
+                         {subscriptions.reduce((sum, s) => sum + (s.totalHours || 0), 0) > 0 
+                           ? ((subscriptions.reduce((sum, s) => sum + (s.usedHours || 0), 0) / subscriptions.reduce((sum, s) => sum + (s.totalHours || 0), 0)) * 100).toFixed(1)
+                           : 0}%
+                       </h3>
+                       <div className="mt-3 h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                           <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${subscriptions.reduce((sum, s) => sum + (s.totalHours || 0), 0) > 0 ? ((subscriptions.reduce((sum, s) => sum + (s.usedHours || 0), 0) / subscriptions.reduce((sum, s) => sum + (s.totalHours || 0), 0)) * 100) : 0}%`}} />
+                       </div>
+                   </div>
+                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm text-right">
+                       <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mb-3">توزيع الحالات للكروت</p>
+                       <div className="flex flex-col gap-2 text-sm font-black">
+                          <div className="flex justify-between items-center text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100/50">
+                             <span>نشط</span>
+                             <span>{subscriptions.filter(s => s.status === 'Active').length}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-rose-600 bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-100/50">
+                             <span>استنزاف</span>
+                             <span>{subscriptions.filter(s => s.status === 'Exhausted').length}</span>
+                          </div>
+                       </div>
+                   </div>
+               </div>
+               
+               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm w-full relative overflow-hidden">
+                   <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-[40px] -z-10" />
+                   <h4 className="text-xl font-black text-slate-800 mb-6 text-right">أفضل المشتركين تفاعلاً وإيراداً</h4>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
+                      {[...subscriptions]
+                         .sort((a, b) => b.paid - a.paid)
+                         .slice(0, 4)
+                         .map((sub, idx) => (
+                          <div key={idx} className="flex justify-between items-center p-5 bg-slate-50/80 rounded-2xl border border-slate-100 hover:border-indigo-200 transition-colors group">
+                              <div className="font-black text-lg text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl group-hover:scale-105 transition-transform">{sub.paid.toLocaleString()} <span className="text-[10px] opacity-50">EGP</span></div>
+                              <div className="text-right">
+                                 <p className="font-black text-slate-800 text-sm md:text-base">{sub.name}</p>
+                                 <p className="text-[10px] text-slate-400 font-mono tracking-widest mt-1 bg-white px-2 py-0.5 rounded border border-slate-100 shadow-sm inline-block">{sub.code}</p>
+                              </div>
+                          </div>
+                      ))}
+                      {[...subscriptions].length === 0 && (
+                          <p className="text-slate-400 text-sm font-bold text-center col-span-2 py-8">لا يوجد بيانات لعرضها بعد</p>
+                      )}
+                   </div>
+               </div>
+           </div>
+        ) : (
+        <div className="overflow-x-auto text-right text-slate-700 animate-in fade-in duration-500">
           <table className="w-full border-separate border-spacing-0">
             <thead>
               <tr className="bg-slate-50/30 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">
@@ -329,7 +412,11 @@ export const SubscriptionsPanel = ({ branchId }: { branchId?: string }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100/50 font-bold">
-              {subscriptions.map((sub) => {
+              {subscriptions.filter(sub => {
+                 if (activeTab === 'active') return sub.status === 'Active';
+                 if (activeTab === 'history') return sub.status !== 'Active';
+                 return true;
+              }).map((sub) => {
                 const total = sub.totalHours;
                 const used = sub.usedHours;
                 const remainingHours = Math.max(0, total - used);
@@ -411,7 +498,17 @@ export const SubscriptionsPanel = ({ branchId }: { branchId?: string }) => {
               })}
             </tbody>
           </table>
+          {subscriptions.filter(sub => {
+             if (activeTab === 'active') return sub.status === 'Active';
+             if (activeTab === 'history') return sub.status !== 'Active';
+             return true;
+          }).length === 0 && (
+             <div className="py-20 text-center">
+                 <p className="text-slate-400 font-black">لا توجد بيانات متاحة في هذا القسم</p>
+             </div>
+          )}
         </div>
+        )}
       </div>
 
       {/* NEW SUBSCRIPTION MODAL */}

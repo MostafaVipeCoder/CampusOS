@@ -69,8 +69,7 @@ const DashboardLayout = () => {
       case 'expenses': return 'سجل المصروفات';
       case 'inventory': return 'إدارة المخزن';
       case 'activities': return 'خطة الأنشطة السنوية';
-      case 'rooms-status': return 'حالة الغرف وحجوزات الساعة';
-      case 'rooms-database': return 'قاعدة بيانات الغرف';
+      case 'rooms-status': return 'إدارة الغرف والحجوزات';
       case 'settings': return 'إعدادات النظام';
       default: return 'Cloud Co-Working';
     }
@@ -136,7 +135,6 @@ const DashboardLayout = () => {
               <Route path="inventory" element={<InventoryPanel branchId={currentCampus?.id} />} />
               <Route path="activities" element={<ActivitiesPage branchId={currentCampus?.id} />} />
               <Route path="rooms-status" element={<RoomsStatus branchId={currentCampus?.id} />} />
-              <Route path="rooms-database" element={<RoomsDatabase branchId={currentCampus?.id} />} />
               <Route path="settings" element={<SettingsPanel branchId={currentCampus?.id} />} />
               <Route path="*" element={<Navigate to="dashboard" replace />} />
             </Routes>

@@ -22,6 +22,12 @@ interface Session {
     code: string,
     subscriptions?: any[]
   };
+  services?: {
+    code: string;
+    name_ar: string;
+    color?: string;
+  };
+  user_name?: string;
 }
 
 // Helper Component for Desktop Table Row
@@ -41,12 +47,20 @@ const SessionRow = ({ session, onEdit, onDelete }: {
     <tr className="hover:bg-slate-50/40 transition-all font-bold group duration-500">
       <td className="px-10 py-8">
          <div className="flex flex-row-reverse items-start gap-4 text-right">
-            <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 lg:group-hover:bg-indigo-50 lg:group-hover:text-indigo-500 transition-all duration-500">
-               <User size={20} />
+            <div 
+              className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-xs shadow-lg transition-all duration-500 overflow-hidden"
+              style={{ backgroundColor: session.services?.color || '#4f46e5' }}
+            >
+               {session.services?.code || <User size={20} />}
             </div>
-            <div className="text-right">
+            <div className="text-right flex-1">
                <p className="text-slate-800 font-black text-base lg:group-hover:text-indigo-600 transition-colors">
-                  {session.customers?.full_name || (session.user_code === 'GUEST_KITCHEN' || session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'مستخدم')}
+                  {session.services?.name_ar || session.user_name || session.customers?.full_name || 'مستخدم'}
+                  {(session.services?.name_ar && (session.customers?.full_name || session.user_name) && (session.user_name !== session.services?.name_ar)) && (
+                    <span className="text-slate-400 text-sm font-bold mr-2">
+                       ({session.customers?.full_name || session.user_name})
+                    </span>
+                  )}
                </p>
                <div className="flex flex-row-reverse items-center justify-start gap-3 mt-2">
                   <span className="text-[10px] text-indigo-500 font-black bg-indigo-50 px-2 py-0.5 rounded-lg">{session.user_code}</span>
@@ -226,10 +240,10 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
       const startISO = startOfDay.toISOString();
       const endISO = endOfDay.toISOString();
 
-      // 1. Fetch Sessions with Subscriptions
+      // 1. Fetch Sessions with Subscriptions and Services
       const { data: sessionsData, error: errSessions } = await (supabase as any)
         .from('workspace_sessions')
-        .select(`*, customers(full_name, code, subscriptions(*))`)
+        .select(`*, services(name_ar, code, color), customers(full_name, code, subscriptions(*))`)
         .eq('branch_id', branchId)
         .gte('created_at', startISO)
         .lte('created_at', endISO)
@@ -371,6 +385,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
         if (error) throw error;
       }
       alert('تم حفظ الملاحظات بنجاح');
+      alert('ØªÙ… Ø­ÙØ¸ Ø§Ù„Ù…Ù„Ø§Ø­Ø¸Ø§Øª Ø¨Ù†Ø¬Ø§Ø­');
       fetchLogData();
     } catch (err: any) {
       alert('خطأ في حفظ الملاحظات: ' + err.message);
@@ -587,15 +602,22 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                <div key={session.id} className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm relative overflow-hidden group">
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
-                       <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0">
-                          <User size={18} />
+                       <div 
+                         className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-[10px] shadow-md shrink-0"
+                         style={{ backgroundColor: session.services?.color || '#4f46e5' }}
+                       >
+                          {session.services?.code || <User size={18} />}
                        </div>
-                       <div className="text-right">
-                          <p className="font-black text-slate-800 text-sm">
-                             {session.customers?.full_name || 
-                              (session.user_code === 'GUEST_KITCHEN' || session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'مستخدم')}
+                       <div className="text-right flex-1">
+                          <p className="font-black text-slate-800 text-sm leading-tight">
+                             {session.services?.name_ar || session.user_name || session.customers?.full_name || 'مستخدم'}
+                             {(session.services?.name_ar && (session.customers?.full_name || session.user_name) && (session.user_name !== session.services?.name_ar)) && (
+                               <span className="text-slate-400 text-[10px] font-bold block mt-1">
+                                  ({session.customers?.full_name || session.user_name})
+                               </span>
+                             )}
                           </p>
-                          <p className="text-[10px] font-black text-slate-400 mt-0.5">{session.user_code}</p>
+                          <p className="text-[10px] font-black text-slate-400 mt-1">{session.user_code}</p>
                        </div>
                     </div>
                     <div className="flex gap-2">
@@ -888,3 +910,6 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
 };
 
 export default DailyLog;
+
+
+

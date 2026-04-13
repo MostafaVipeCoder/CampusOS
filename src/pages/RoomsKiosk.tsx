@@ -81,6 +81,10 @@ const RoomCard = ({ room, sessions, bookings, index }: any) => {
   const statusLabel = isEnding ? 'جاري المغادرة...' : (status === 'occupied' ? 'مشغول' : status === 'soon' ? 'محجوز قريباً' : 'متاح حالياً');
   const statusIcon = isEnding ? <Timer className="animate-pulse" size={18} /> : (status === 'occupied' ? <User size={18} /> : status === 'soon' ? <Calendar size={18} /> : <Clock size={18} />);
   
+  // Clean up user name display for anonymous room sessions
+  const isAnonRoom = currentSession?.user_name === `${room.code} - ${room.name_ar}`;
+  const displayUser = isAnonRoom ? 'زائر' : (currentSession?.user_name || currentSession?.customers?.full_name || 'عميل');
+
   // High-Contrast Status Colors
   const statusColor = isEnding ? '#3B82F6' : (status === 'occupied' ? '#F83854' : (status === 'soon' ? '#F78C2A' : '#1ED788'));
   const roomColor = getHexColor(room.color);
@@ -107,94 +111,100 @@ const RoomCard = ({ room, sessions, bookings, index }: any) => {
 
       <div className="relative z-10 p-8 flex flex-col h-full gap-8">
         {/* Header */}
-        <div className="flex justify-between items-start">
-          <div className="text-right flex-1">
-            <h2 className="text-4xl font-black tracking-tight leading-tight" style={{ color: roomColor }}>{room.name_ar}</h2>
+        <div className="flex justify-between items-start gap-4">
+          <div className="text-right flex-1 min-w-0">
+            <h2 className="text-3xl 2xl:text-4xl font-black tracking-tight leading-tight break-words" style={{ color: roomColor }}>{room.name_ar}</h2>
             <div
-              className="mt-3 inline-flex items-center gap-2 px-5 py-1.5 rounded-2xl text-[11px] font-black uppercase tracking-[0.3em]"
+              className="mt-3 inline-flex items-center gap-2 px-4 py-1 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em]"
               style={{ background: `${roomColor}15`, color: `${roomColor}cc`, border: `1px solid ${roomColor}25` }}
             >
               {room.code}
             </div>
           </div>
-          <div className="text-right">
+          <div className="text-right shrink-0 pt-2">
              <div className={`w-3 h-3 rounded-full animate-ping`} style={{ backgroundColor: statusColor }} />
           </div>
         </div>
 
         {/* Status Badge - PURE COLOR SIGN */}
-        <div className="flex justify-center">
+        <div className="flex justify-center w-full">
           <motion.div
             key={status}
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="flex items-center gap-4 px-10 py-5 rounded-full text-2xl font-black shadow-2xl transition-all duration-500"
+            className="flex items-center justify-center gap-3 px-6 py-4 lg:px-8 w-max max-w-[90%] rounded-[2rem] text-xl lg:text-2xl font-black shadow-2xl transition-all duration-500"
             style={{
               background: statusColor,
               color: 'white',
-              boxShadow: `0 0 50px ${statusColor}40`,
+              boxShadow: `0 0 40px ${statusColor}40`,
             }}
           >
-            {statusIcon}
-            {statusLabel}
-            <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
+            <div className="shrink-0">{statusIcon}</div>
+            <span className="truncate">{statusLabel}</span>
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse shrink-0 ml-1" />
           </motion.div>
         </div>
 
         {/* Main Info Area */}
         <div
-          className={`flex-1 flex flex-col items-center justify-center rounded-[2.5rem] p-8 gap-6 transition-all duration-1000 ${isOccupied ? 'bg-white/[0.03]' : ''}`}
-          style={{ border: `1px solid ${roomColor}15` }}
+          className={`flex-1 flex flex-col items-center justify-center rounded-[2.5rem] p-6 lg:p-8 gap-5 transition-all duration-1000 overflow-hidden ${isOccupied ? 'bg-white/[0.05] shadow-[inset_0_0_100px_rgba(255,255,255,0.02)]' : 'bg-black/10'}`}
+          style={{ border: `1px solid ${roomColor}25` }}
         >
           {isOccupied ? (
             <>
-              <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-2xl" style={{ background: `${roomColor}25`, border: `2px solid ${roomColor}40` }}>
-                <User size={36} style={{ color: roomColor }} />
+              <div className="w-20 h-20 lg:w-24 lg:h-24 shrink-0 rounded-[2rem] flex items-center justify-center shadow-2xl relative overflow-hidden group mb-2" style={{ background: `${roomColor}25`, border: `2px solid ${roomColor}50` }}>
+                <div className="absolute inset-0 opacity-50 bg-gradient-to-br from-white/20 to-transparent pointer-events-none" />
+                <User size={36} style={{ color: roomColor }} className="relative z-10" />
               </div>
-              <div className="text-center space-y-2">
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/30">المستخدم الحالي</p>
-                <p className="text-3xl font-black text-white">
-                  {currentSession.user_name || currentSession.customers?.full_name || 'عميل'}
+              <div className="text-center space-y-1 w-full px-2 flex-1 flex flex-col justify-center">
+                <p className="text-[9px] font-black uppercase tracking-[0.3em] text-white/40">المستخدم الحالي</p>
+                <p className="text-2xl 2xl:text-3xl font-black text-white break-words text-balance leading-tight w-full" title={displayUser}>
+                  {displayUser}
                 </p>
               </div>
-              <div className="flex items-center gap-3 px-8 py-3 rounded-2xl text-lg font-black" style={{ background: `${roomColor}20`, color: roomColor, border: `1px solid ${roomColor}30` }}>
-                <Timer size={20} />
-                <span>متبقي: {getSessionRemaining()}</span>
+              <div className="flex flex-wrap items-center justify-center gap-2 px-5 py-2.5 mt-auto rounded-2xl text-base 2xl:text-lg font-black shadow-lg backdrop-blur-md w-full" style={{ background: `${roomColor}30`, color: '#fff', border: `1px solid ${roomColor}50` }}>
+                <Timer size={20} className="animate-pulse opacity-80 shrink-0" />
+                <span className="text-center">متبقي: {getSessionRemaining()}</span>
               </div>
             </>
           ) : (
             <>
-              <p className="text-lg font-black tracking-widest text-white/40 uppercase">جاهز للاستقبال</p>
+              <div className="w-20 h-20 lg:w-24 lg:h-24 rounded-[2rem] flex items-center justify-center shadow-inner relative overflow-hidden" style={{ background: `rgba(255,255,255,0.02)`, border: `2px dashed ${roomColor}40` }}>
+                 <Clock size={36} className="text-white/20" />
+              </div>
+              <p className="text-lg lg:text-xl font-black tracking-widest text-white/40 uppercase mt-4 text-center">جاهز للاستقبال</p>
             </>
           )}
 
-          <div className="w-full pt-6 mt-2 text-center" style={{ borderTop: `1px solid ${roomColor}20` }}>
-            <p className="text-[11px] font-black uppercase tracking-[0.3em] mb-2 text-white/30">
+          <div className="w-full pt-4 mt-2 text-center shrink-0 border-t" style={{ borderColor: `${roomColor}20` }}>
+            <p className="text-[9px] font-black uppercase tracking-[0.3em] mb-1.5 text-white/30">
               {isOccupied ? 'ينتهي في' : 'متاح حتى'}
             </p>
-            <p className="text-3xl font-black text-white tracking-tight">
+            <p className="text-xl 2xl:text-2xl font-black text-white tracking-tight flex items-center justify-center min-h-[32px]">
               {freeUntil ? formatArabicTime(freeUntil) : 'طوال اليوم'}
             </p>
           </div>
         </div>
 
         {/* Booking Footer */}
-        <div className="flex items-center justify-between p-6 rounded-[2rem]" style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${roomColor}10` }}>
-          <div className="flex items-center gap-5 text-right">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg" style={{ background: `${roomColor}15` }}>
-              <Calendar size={28} style={{ color: roomColor }} />
+        <div className="flex flex-col sm:flex-row items-center justify-between p-5 lg:p-6 rounded-[2rem] gap-4" style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${roomColor}10` }}>
+          <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-right w-full sm:w-auto">
+            <div className="w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center shadow-lg mx-auto sm:mx-0" style={{ background: `${roomColor}15` }}>
+              <Calendar size={24} style={{ color: roomColor }} />
             </div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.4em] text-white/20 mb-1">الحجز التالي</p>
-              <p className="text-xl font-black text-white/80">
+            <div className="flex-1 px-1 min-w-0">
+              <p className="text-[9px] font-black uppercase tracking-[0.4em] text-white/20 mb-1">الحجز التالي</p>
+              <p className="text-base lg:text-lg font-black text-white/80 break-words leading-tight">
                 {nextBooking?.user_name || nextBooking?.customers?.full_name || (nextBooking ? 'حجز مسجل' : 'لا يوجد')}
               </p>
             </div>
           </div>
           {nextBooking && (
-            <p className="text-2xl font-black font-mono text-white/50">
-              {formatArabicTime(minutesToTime(nextBooking.start_time))}
-            </p>
+            <div className="shrink-0 pt-3 sm:pt-0 sm:pr-4 border-t sm:border-t-0 sm:border-r border-white/10 w-full sm:w-auto text-center sm:text-right">
+              <p className="text-base lg:text-xl font-black font-mono text-white/50">
+                {formatArabicTime(minutesToTime(nextBooking.start_time))}
+              </p>
+            </div>
           )}
         </div>
       </div>
@@ -257,12 +267,13 @@ export const RoomsKiosk = () => {
   }, [fetchData]);
 
   return (
-    <div className="h-screen w-screen p-10 overflow-hidden flex flex-col relative bg-[#020617] text-right" dir="rtl" style={{ fontFamily: "'Cairo', sans-serif" }}>
+    <div className="h-screen w-screen p-8 md:p-12 overflow-hidden flex flex-col relative bg-[#020617] text-right selection:bg-indigo-500/30" dir="rtl" style={{ fontFamily: "'Cairo', sans-serif" }}>
       {/* Immersive Background */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-1/4 -right-1/4 w-[800px] h-[800px] rounded-full blur-[200px] opacity-10 bg-indigo-500" />
-        <div className="absolute -bottom-1/4 -left-1/4 w-[800px] h-[800px] rounded-full blur-[200px] opacity-10 bg-emerald-500" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[250px] opacity-5 bg-blue-500" />
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute -top-[30%] -right-[10%] w-[1000px] h-[1000px] rounded-full blur-[250px] opacity-20 bg-indigo-600/40 mix-blend-screen" />
+        <div className="absolute -bottom-[20%] -left-[10%] w-[1000px] h-[1000px] rounded-full blur-[250px] opacity-20 bg-emerald-600/40 mix-blend-screen" />
+        <div className="absolute top-[40%] left-[40%] w-[800px] h-[800px] rounded-full blur-[300px] opacity-10 bg-cyan-500/30 mix-blend-screen" />
+        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] mix-blend-overlay"></div>
       </div>
 
       {/* Glass Header */}
@@ -288,13 +299,20 @@ export const RoomsKiosk = () => {
         </div>
       </motion.header>
 
-      {/* High-Performance Flexible Grid (Prioritizes Columns) */}
-      <div className="flex-1 flex flex-row gap-6 relative z-10 min-h-0 overflow-hidden">
-        {rooms.map((room, i) => (
-          <div key={room.id} className="flex-1 min-w-[320px] h-full">
-            <RoomCard room={room} sessions={sessions} bookings={bookings} index={i} />
-          </div>
-        ))}
+      {/* High-Performance Flexible Grid (Wraps properly for multiple rooms) */}
+      <div className="flex-1 w-full relative z-10 overflow-y-auto pr-4 custom-scrollbar">
+        <div className={`grid gap-10 pb-12 ${
+          rooms.length === 1 ? 'grid-cols-1 max-w-4xl mx-auto' : 
+          rooms.length === 2 ? 'grid-cols-2' : 
+          rooms.length === 3 ? 'grid-cols-2 xl:grid-cols-3' : 
+          'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+        }`}>
+          {rooms.map((room, i) => (
+            <div key={room.id} className="min-h-[600px] flex flex-col">
+              <RoomCard room={room} sessions={sessions} bookings={bookings} index={i} />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Futuristic Footer

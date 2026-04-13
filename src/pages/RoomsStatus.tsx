@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Clock, Users, ArrowRight, X, Loader2, CheckCircle2, AlertCircle, Calendar, Plus } from 'lucide-react';
+import { Clock, Users, ArrowRight, X, Loader2, CheckCircle2, AlertCircle, Calendar, Plus, Edit, Receipt } from 'lucide-react';
+import { RoomsDatabase } from './RoomsDatabase';
 
 interface Room {
   id: string;
@@ -13,7 +14,7 @@ interface Room {
 }
 
 export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
-  const [activeTab, setActiveTab] = useState<'status' | 'history' | 'analysis'>('status');
+  const [activeTab, setActiveTab] = useState<'status' | 'history' | 'analysis' | 'database'>('status');
   const [rooms, setRooms] = useState<Room[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,8 +38,11 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
   const [editingHistoryItem, setEditingHistoryItem] = useState<any>(null);
 
   // Manual Override States
+  // Manual Override States
   const [overrideDuration, setOverrideDuration] = useState('');
   const [overrideRoomAmount, setOverrideRoomAmount] = useState('');
+
+  const [editingLiveSession, setEditingLiveSession] = useState<any>(null);
 
   useEffect(() => {
     if (branchId) {
@@ -103,7 +107,7 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
     setLoading(true);
     try {
       const { data } = await (supabase.from('workspace_sessions') as any)
-        .select('*, services(name_ar), customers(full_name)')
+        .select('*, services(name_ar, code, base_price), customers(full_name)')
         .eq('branch_id', branchId)
         .eq('status', 'completed')
         .not('service_id', 'is', null) // Only room sessions
@@ -181,11 +185,17 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
     
     const start = new Date(session.start_time);
     const end = new Date();
-    const diffMins = Math.ceil(Math.abs(end.getTime() - start.getTime()) / 60000);
-    const initialAmount = Math.ceil((diffMins/60) * room.base_price);
+    let diffMins = Math.ceil(Math.abs(end.getTime() - start.getTime()) / 60000);
+    if (diffMins === 0) diffMins = 1;
+    
+    // Round UP to the nearest 30 minute interval
+    const billedIntervals = Math.ceil(diffMins / 30);
+    const billedMins = billedIntervals * 30;
+    
+    const initialAmount = Math.ceil((billedMins/60) * room.base_price);
 
     setTempOrders([]);
-    setOverrideDuration(diffMins.toString());
+    setOverrideDuration(billedMins.toString());
     setOverrideRoomAmount(initialAmount.toString());
     setShowCateringEntry({
       room,
@@ -274,6 +284,10 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
       const { error } = await supabase
         .from('workspace_sessions')
         .update({
+          user_name: updatedData.user_name,
+          user_code: updatedData.user_code,
+          start_time: updatedData.start_time,
+          end_time: updatedData.end_time,
           total_minutes: parseInt(updatedData.total_minutes),
           total_amount: parseFloat(updatedData.total_amount)
         })
@@ -282,6 +296,25 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
       if (error) throw error;
       setEditingHistoryItem(null);
       fetchHistory();
+    } catch (err: any) {
+      alert('Error updating: ' + err.message);
+    }
+  };
+
+  const handleUpdateLiveSession = async (updatedData: any) => {
+    try {
+      const { error } = await supabase
+        .from('workspace_sessions')
+        .update({
+          user_name: updatedData.user_name,
+          user_code: updatedData.user_code,
+          start_time: updatedData.start_time
+        })
+        .eq('id', updatedData.id);
+
+      if (error) throw error;
+      setEditingLiveSession(null);
+      fetchRoomsStatus();
     } catch (err: any) {
       alert('Error updating: ' + err.message);
     }
@@ -353,6 +386,12 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
             >
               تحليل البيانات
             </button>
+            <button 
+              onClick={() => setActiveTab('database')}
+              className={`text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'database' ? 'text-indigo-600 border-b-2 border-indigo-600 pb-1' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              قاعدة الغرف والأسعار
+            </button>
           </div>
         </div>
 
@@ -380,61 +419,79 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
            {[...Array(6)].map((_, i) => <div key={i} className="h-64 bg-slate-50 rounded-[3rem] animate-pulse"></div>)}
         </div>
+      ) : activeTab === 'database' ? (
+        <div className="animate-in fade-in slide-in-from-bottom-5">
+           <RoomsDatabase branchId={branchId} />
+        </div>
       ) : activeTab === 'status' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
           {rooms.map(room => {
             const isOccupied = !!room.current_session;
             const nextBooking = checkFutureBooking(room.id);
             
             return (
-              <div key={room.id} className={`group relative bg-white rounded-[3.5rem] border-2 transition-all duration-500 hover:shadow-2xl ${isOccupied ? 'border-rose-100' : 'border-slate-50 hover:border-indigo-100'}`}>
-                <div className="p-10 flex justify-between items-start">
-                   <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center font-black text-2xl shadow-xl transition-all group-hover:scale-110 ${getRoomColor(room.color)}`}>
+              <div key={room.id} className={`group relative bg-white rounded-[3.5rem] border-2 transition-all duration-500 hover:shadow-2xl flex flex-col ${isOccupied ? 'border-rose-100 shadow-sm' : 'border-slate-50 hover:border-indigo-100'}`}>
+                <div className="p-8 pb-6 flex justify-between items-start">
+                   <div className={`w-16 h-16 shrink-0 rounded-[1.5rem] flex items-center justify-center font-black text-2xl shadow-xl transition-all group-hover:scale-110 ${getRoomColor(room.color)}`}>
                      {room.code}
                    </div>
-                   <div className={`px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isOccupied ? 'bg-rose-500 text-white' : 'bg-emerald-500/10 text-emerald-600'}`}>
-                     {isOccupied ? 'مشغول' : 'متاح حالياً'}
+                   <div className="flex flex-col items-end gap-2">
+                       <span className={`px-4 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isOccupied ? 'bg-rose-50 border border-rose-200 text-rose-600' : 'bg-emerald-50 border border-emerald-200 text-emerald-600'}`}>
+                         {isOccupied ? 'مفتوحة حالياً' : 'متاحة الآن'}
+                       </span>
+                       {nextBooking && !isOccupied && (
+                          <span className="flex items-center gap-1.5 text-amber-600 font-bold text-[10px] bg-amber-50 px-3 py-1 rounded-xl border border-amber-200">
+                             <Calendar size={12} />
+                             الحجز القادم: {formatTime(nextBooking.start_time)}
+                          </span>
+                       )}
                    </div>
                 </div>
 
-                <div className="p-10 pt-0">
-                  <h3 className="text-3xl font-black text-slate-800">{room.name_ar}</h3>
-                  <div className="flex items-center gap-2 mt-2 text-slate-400 font-bold">
-                    <Clock size={16} />
-                    <span>{room.base_price} EGP / سـاعة</span>
+                <div className="px-8 pb-8 flex flex-col flex-1 gap-6">
+                  <div>
+                      <h3 className="text-2xl font-black text-slate-800 leading-tight mb-2 pr-3 border-r-4 border-indigo-500">{room.name_ar}</h3>
+                      <div className="flex items-center gap-2 text-slate-400 font-bold text-sm pr-3">
+                        <Clock size={16} />
+                        <span>{room.base_price} EGP / سـاعة</span>
+                      </div>
                   </div>
 
-                  {nextBooking && !isOccupied && (
-                     <div className="mt-4 flex items-center gap-2 text-amber-600 font-black text-xs bg-amber-50 p-3 rounded-2xl border border-amber-100 animate-pulse">
-                        <Calendar size={14} />
-                        <span>محجوز: {nextBooking.user_name || nextBooking.customers?.full_name} ({formatTime(nextBooking.start_time)})</span>
-                     </div>
-                  )}
-
-                  {isOccupied ? (
-                    <div className="mt-8 space-y-4">
-                       <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 group/info hover:bg-slate-100 transition-colors">
-                          <div className="flex justify-between items-center mb-2">
-                             <span className="text-[10px] text-slate-400 font-black uppercase">العميل</span>
-                             <span className="text-sm font-black text-slate-700">{room.current_session.user_name || 'عميل'}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-[10px] font-black">
-                             <span className="text-slate-400 uppercase">المدة</span>
-                             <span className="text-indigo-600">من {new Date(room.current_session.start_time).toLocaleTimeString('ar-EG', { hour12: true, hour: '2-digit', minute: '2-digit' })}</span>
-                          </div>
-                       </div>
-                       <button onClick={() => handleEndServing(room)} disabled={processing} className="w-full bg-rose-500 text-white py-5 rounded-[2rem] font-black text-sm hover:bg-rose-600 transition-all shadow-lg shadow-rose-200 disabled:opacity-50 active:scale-95">
-                          إنهاء الجلسة
-                       </button>
-                    </div>
-                  ) : (
-                    <div className="mt-10">
-                       <button onClick={() => setServingRoom(room)} className="w-full h-32 bg-slate-50 text-slate-400 border-2 border-slate-50 border-dashed rounded-[2.5rem] font-black hover:bg-indigo-50 hover:border-indigo-100 hover:text-indigo-600 transition-all flex flex-col items-center justify-center gap-2 active:scale-95">
-                          <ArrowRight size={24} />
-                          <span>فتح الغرفة الآن</span>
-                       </button>
-                    </div>
-                  )}
+                  <div className="flex-1 flex flex-col justify-end">
+                    {isOccupied ? (
+                      <div className="space-y-4">
+                         <div className="p-5 bg-slate-50 rounded-[2rem] border border-slate-100 group/info hover:border-indigo-200 hover:shadow-md transition-all relative mt-2">
+                            <button 
+                              onClick={() => setEditingLiveSession(room.current_session)} 
+                              className="absolute top-4 left-4 p-2 text-indigo-600 hover:text-white bg-indigo-50 hover:bg-indigo-600 rounded-lg shadow-sm transition-all active:scale-95 z-10"
+                              title="تعديل تفاصيل ووقت الجلسة"
+                            >
+                               <Edit size={16} />
+                            </button>
+                            <div className="flex flex-col gap-1 mb-4 border-b border-slate-200/60 pb-3">
+                               <span className="text-[10px] text-slate-400 font-black uppercase">بيانات العميل / القاعة</span>
+                               <span className="text-base font-black text-slate-800 break-words leading-tight ml-8">
+                                 {room.current_session.user_name || room.name_ar || 'عميل'}
+                               </span>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                               <span className="text-[10px] text-slate-400 font-black uppercase">وقت البدء</span>
+                               <span className="text-sm font-black text-indigo-600">{new Date(room.current_session.start_time).toLocaleTimeString('ar-EG', { hour12: true, hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                         </div>
+                         <button onClick={() => handleEndServing(room)} disabled={processing} className="w-full bg-rose-500 text-white py-4 rounded-[1.5rem] font-black text-sm hover:bg-rose-600 transition-all shadow-lg shadow-rose-200 disabled:opacity-50 active:scale-95">
+                            إنهاء ومحاسبة
+                         </button>
+                      </div>
+                    ) : (
+                      <div className="mt-6">
+                         <button onClick={() => setServingRoom(room)} className="w-full h-[120px] bg-slate-50 text-slate-400 border-2 border-slate-100 border-dashed rounded-[2.5rem] font-black hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600 transition-all flex flex-col items-center justify-center gap-2 active:scale-95">
+                            <ArrowRight size={24} />
+                            <span>تسجيل التسكين الآن</span>
+                         </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -460,7 +517,7 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
                        {item.services?.code && <span className="mr-2 text-[10px] text-slate-400 font-bold">({item.services.code})</span>}
                     </td>
                     <td className="px-8 py-5">
-                       <div>{item.user_name || item.customers?.full_name || 'عميل'}</div>
+                       <div>{item.user_name || item.customers?.full_name || item.services?.name_ar || 'عميل'}</div>
                        <div className="text-[10px] text-slate-400 uppercase mt-0.5">{item.user_code}</div>
                     </td>
                     <td className="px-8 py-5">
@@ -469,16 +526,40 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
                          {new Date(item.start_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })} - {new Date(item.end_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
                        </div>
                     </td>
-                    <td className="px-8 py-5">{item.total_minutes} دقيقة</td>
+                    <td className="px-8 py-5">
+                       {(item.total_minutes / 60).toFixed(1)} ساعة
+                       <div className="text-[10px] text-slate-400 mt-0.5">({item.total_minutes} دقيقة)</div>
+                    </td>
                     <td className="px-8 py-5">
                        <div className="flex items-center justify-between">
                           <span className="text-indigo-600 font-black">{item.total_amount} EGP</span>
                           <div className="flex gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
                              <button 
+                               onClick={() => setShowReceipt({
+                                  roomName: item.services?.name_ar || 'غرفة',
+                                  roomCode: item.services?.code,
+                                  userName: item.user_name || item.customers?.full_name || item.services?.name_ar || 'عميل',
+                                  userCode: item.user_code,
+                                  startTime: item.start_time,
+                                  endTime: item.end_time,
+                                  duration: item.total_minutes,
+                                  rate: item.services?.base_price || 0,
+                                  workspaceAmount: item.total_amount - (item.catering_amount || 0),
+                                  cateringAmount: item.catering_amount || 0,
+                                  items: item.orders || [],
+                                  total: item.total_amount
+                               })}
+                               className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
+                               title="عرض الفاتورة"
+                             >
+                                <Receipt size={16} />
+                             </button>
+                             <button 
                                onClick={() => setEditingHistoryItem(item)}
                                className="p-2 text-indigo-400 hover:bg-indigo-50 rounded-lg transition-colors"
+                               title="تعديل الجلسة"
                              >
-                                <Users size={14} />
+                                <Edit size={16} />
                              </button>
                              <button 
                                onClick={() => {
@@ -851,7 +932,25 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
                  </div>
               </div>
 
-              <div className="space-y-6">
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto px-1 custom-scrollbar">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase pr-2">العميل</label>
+                    <input 
+                      type="text" 
+                      className="w-full bg-slate-50 border border-slate-100 rounded-[1.5rem] px-6 py-4 font-black outline-none focus:border-indigo-500 transition-all text-right"
+                      value={editingHistoryItem.user_name || ''}
+                      onChange={e => setEditingHistoryItem({ ...editingHistoryItem, user_name: e.target.value })}
+                    />
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase pr-2">وقت البدء (ISO)</label>
+                    <input 
+                      type="datetime-local" 
+                      className="w-full bg-slate-50 border border-slate-100 rounded-[1.5rem] px-6 py-4 font-black outline-none focus:border-indigo-500 transition-all text-center"
+                      value={new Date(editingHistoryItem.start_time).toISOString().slice(0, 16)}
+                      onChange={e => setEditingHistoryItem({ ...editingHistoryItem, start_time: new Date(e.target.value).toISOString() })}
+                    />
+                 </div>
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase pr-2">المدة (بالدقائق)</label>
                     <input 
@@ -876,6 +975,57 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
                   className="w-full bg-slate-900 text-white h-16 rounded-[2rem] font-black text-sm hover:bg-indigo-600 transition-all shadow-xl shadow-slate-200 mt-4 active:scale-95"
                  >
                     حفظ التعديلات
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Edit Live Session Modal */}
+      {editingLiveSession && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in">
+           <div className="bg-white w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden p-10">
+              <div className="flex justify-between items-center mb-8">
+                 <button onClick={() => setEditingLiveSession(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={24} /></button>
+                 <div className="text-right">
+                    <h3 className="text-xl font-black text-slate-900">تعديل الجلسة النشطة</h3>
+                 </div>
+              </div>
+
+              <div className="space-y-4">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase pr-2">العميل</label>
+                    <input 
+                      type="text" 
+                      className="w-full bg-slate-50 border border-slate-100 rounded-[1.5rem] px-6 py-4 font-black outline-none focus:border-indigo-500 transition-all text-right"
+                      value={editingLiveSession.user_name || ''}
+                      onChange={e => setEditingLiveSession({ ...editingLiveSession, user_name: e.target.value })}
+                    />
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase pr-2">الكود (إن وجد)</label>
+                    <input 
+                      type="text" 
+                      className="w-full bg-slate-50 border border-slate-100 rounded-[1.5rem] px-6 py-4 font-black outline-none focus:border-indigo-500 transition-all text-right uppercase"
+                      value={editingLiveSession.user_code || ''}
+                      onChange={e => setEditingLiveSession({ ...editingLiveSession, user_code: e.target.value })}
+                    />
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase pr-2">وقت البدء</label>
+                    <input 
+                      type="datetime-local" 
+                      className="w-full bg-slate-50 border border-slate-100 rounded-[1.5rem] px-6 py-4 font-black outline-none focus:border-indigo-500 transition-all text-center"
+                      value={new Date(editingLiveSession.start_time).toISOString().slice(0, 16)}
+                      onChange={e => setEditingLiveSession({ ...editingLiveSession, start_time: new Date(e.target.value).toISOString() })}
+                    />
+                 </div>
+
+                 <button 
+                  onClick={() => handleUpdateLiveSession(editingLiveSession)}
+                  className="w-full bg-slate-900 text-white h-16 rounded-[2rem] font-black text-sm hover:bg-emerald-600 transition-all shadow-xl shadow-slate-200 mt-4 active:scale-95"
+                 >
+                    تحديث بيانات الجلسة
                  </button>
               </div>
            </div>

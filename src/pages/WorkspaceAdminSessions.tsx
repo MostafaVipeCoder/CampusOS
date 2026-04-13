@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Clock, CheckCircle2, AlertCircle, RefreshCw, X, Receipt, Users2, Sparkles, Plus, Lock, Briefcase, Layout } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { calculateSessionPrice } from '../lib/pricing';
@@ -240,6 +240,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     } else if (businessMember) {
         // Business logic: Space is logged but not paid now.
         workspaceAmount = 0; 
+    } else if (session.user_code === 'GUEST_KITCHEN') {
+        workspaceAmount = 0;
     } else {
         workspaceAmount = calculateSessionPrice(diffMinutes) || 0;
     }
@@ -304,6 +306,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
        }
     } else if (businessContract && businessContract.type === 'Business') {
        workspaceAmount = (usedHours * (Number(businessContract.space_price) || 0));
+    } else if (editingBill.user_code === 'GUEST_KITCHEN') {
+       workspaceAmount = 0;
     } else {
        workspaceAmount = calculateSessionPrice(diffMinutes) || 0;
     }
@@ -746,7 +750,11 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                   );
 
                   return (
-                    <tr key={session.id} className="border-b border-slate-50 hover:bg-slate-50/80 transition-all group">
+                    <tr 
+                      key={session.id} 
+                      className="border-b border-slate-50 hover:bg-slate-50/80 transition-all group"
+                      style={{ backgroundColor: session.services?.color ? `${session.services.color}08` : undefined }}
+                    >
                       <td className="py-6 px-6">
                         <div className="flex flex-row-reverse items-center justify-end gap-3 text-right">
                           <div className="text-right">
@@ -769,8 +777,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                             <div className="flex flex-row-reverse items-center gap-2 mt-1">
                                <div className="text-sm font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded-lg w-fit">{session.user_code}</div>
                                {activeSub && (
-                                  <div className="flex flex-row-reverse items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black animate-pulse">
-                                     <Sparkles size={10} />
+                                  <div className="flex flex-row-reverse items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black ">
+                                     
                                      <span>Subscribed</span>
                                   </div>
                                )}
@@ -789,9 +797,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                         {new Date(session.start_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
                       </td>
                       <td className="py-6 px-6">
-                        <div className={`font-mono text-lg font-black flex items-center gap-2 ${session.is_paused ? 'text-amber-500' : 'text-indigo-600'}`}>
-                          <Clock size={16} className={session.is_paused ? '' : 'animate-pulse'} />
-                          {hrs}س {mins}د
+                        <div className={`font-mono text-lg font-black flex items-center justify-end gap-2 ${session.is_paused ? 'text-amber-500' : 'text-indigo-600'}`}>
+                          {hrs}Ø³ {mins}Ø¯
                           {session.is_paused && <span className="text-[10px] bg-amber-100 px-1.5 py-0.5 rounded ml-2">P</span>}
                         </div>
                       </td>
@@ -915,17 +922,36 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
               );
 
               return (
-                <div key={session.id} className={`p-5 rounded-3xl border-2 transition-all duration-300 ${session.status === 'checkout_requested' ? 'bg-amber-50/30 border-amber-200' : 'bg-white border-slate-100'}`}>
+                <div 
+                  key={session.id} 
+                  className={`p-5 rounded-3xl border-2 transition-all duration-300 ${session.status === 'checkout_requested' ? 'border-amber-200' : 'border-slate-100'}`}
+                  style={{ backgroundColor: session.services?.color ? `${session.services.color}08` : (session.status === 'checkout_requested' ? '#fdf6e7' : '#ffffff') }}
+                >
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white ${session.status === 'checkout_requested' ? 'bg-amber-500 shadow-lg shadow-amber-500/20' : 'bg-indigo-600 shadow-lg shadow-indigo-600/20'}`}>
-                        {session.status === 'checkout_requested' ? <AlertCircle size={24} /> : <Users2 size={24} />}
+                      <div 
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-xs shadow-lg overflow-hidden shrink-0"
+                        style={{ backgroundColor: session.services?.color || (session.status === 'checkout_requested' ? '#f59e0b' : '#4f46e5') }}
+                      >
+                        {session.services?.code || (session.status === 'checkout_requested' ? '!' : 'User')}
                       </div>
                       <div className="text-right">
                         <div className="font-black text-slate-900 text-base leading-tight">
-                          {session.customers?.full_name || (session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'مستخدم مجهول')}
+                          {session.services?.name_ar || session.user_name || session.customers?.full_name || (session.user_code.startsWith('NA') ? `Ø²Ø§Ø¦Ø± (${session.user_code})` : 'Ù…Ø³ØªØ®Ø¯Ù…')}
+                          {session.services?.name_ar && (session.user_name || session.customers?.full_name) && (session.user_name !== session.services?.name_ar) && (
+                            <span className="text-slate-400 text-[10px] font-bold block mt-1">
+                               ({session.user_name || session.customers?.full_name})
+                            </span>
+                          )}
                         </div>
-                        <div className="text-[10px] font-black text-slate-400 mt-0.5">{session.user_code} • {session.phone_number}</div>
+                        <div className="text-[10px] font-black text-slate-400 mt-0.5">
+                            {session.services && (
+                                <span className="px-1.5 py-0.5 rounded-lg border mr-1" style={{ backgroundColor: `${session.services.color}15`, color: session.services.color, borderColor: `${session.services.color}30` }}>
+                                    {session.services.code}
+                                </span>
+                            )}
+                            {session.user_code} â€¢ {session.phone_number}
+                        </div>
                       </div>
                     </div>
                     {session.status === 'checkout_requested' && (
@@ -952,7 +978,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                   {activeSub && (
                     <div className="bg-emerald-50 rounded-2xl p-3 border border-emerald-100 mb-4 flex justify-between items-center">
                        <div className="flex items-center gap-1.5 text-emerald-600">
-                          <Sparkles size={14} className="animate-pulse" />
+                          <Sparkles size={14} className="" />
                           <span className="text-[10px] font-black uppercase">Subscribed</span>
                        </div>
                        <p className="text-[10px] font-black text-emerald-700">Left: {(activeSub.total_hours - activeSub.used_hours).toFixed(1)}H</p>
@@ -966,7 +992,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                             onClick={() => handlePrepareCheckout(session)}
                             className={`h-16 rounded-2xl text-white font-black text-sm transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 ${
                               session.status === 'checkout_requested' 
-                                ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-200 animate-pulse col-span-2' 
+                                ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-200  col-span-2' 
                                 : 'bg-slate-900 hover:bg-black shadow-slate-900/20 col-span-1'
                             }`}
                           >
@@ -1343,9 +1369,9 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                 <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl -z-10" />
                 
                 <div className="border-b-2 border-dashed border-slate-200 pb-6 text-center">
-                  <p className="text-slate-400 text-[10px] md:text-xs font-black mb-2 uppercase tracking-widest">Client Name</p>
+                  <p className="text-slate-400 text-[10px] md:text-xs font-black mb-2 uppercase tracking-widest">Client / Room Name</p>
                   <p className="text-xl md:text-2xl font-black text-slate-900 leading-tight">
-                    {checkoutBill.customers?.full_name || (checkoutBill.user_code.startsWith('NA') ? `Guest (${checkoutBill.user_code})` : 'Unknown')}
+                    {checkoutBill.user_name || checkoutBill.customers?.full_name || checkoutBill.services?.name_ar || (checkoutBill.user_code.startsWith('NA') ? `Guest (${checkoutBill.user_code})` : 'Unknown')}
                   </p>
                   <div className="mt-3">
                     <p className="text-sm md:text-lg font-black text-indigo-600 bg-white inline-block px-4 py-1.5 rounded-xl shadow-sm border border-indigo-50 font-mono tracking-wider">{checkoutBill.user_code}</p>

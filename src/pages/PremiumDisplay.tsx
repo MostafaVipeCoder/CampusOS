@@ -74,6 +74,9 @@ const ActiveRoomCard: React.FC<ActiveRoomCardProps> = ({ session, isCompact, ind
         progress = Math.min(100, Math.max(0, (elapsed / total) * 100));
     }
 
+    const isAnonRoom = session.user_name === `${session.services?.code} - ${session.services?.name_ar}`;
+    const displayUser = isAnonRoom ? 'زائر' : (session.user_name || session.customers?.full_name || 'عميل');
+
     return (
         <motion.div
             layout
@@ -81,7 +84,7 @@ const ActiveRoomCard: React.FC<ActiveRoomCardProps> = ({ session, isCompact, ind
             animate={{ opacity: 1, scale: 1, x: 0 }}
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{ type: 'spring', damping: 20, stiffness: 100, delay: index * 0.05 }}
-            className={`relative flex flex-col justify-between rounded-[2.5rem] border shadow-2xl transition-all duration-500 group overflow-hidden ${isCompact ? 'p-5' : 'p-8'}`}
+            className={`relative flex flex-col justify-between rounded-[2.5rem] border shadow-2xl transition-all duration-500 group overflow-hidden ${isCompact ? 'p-6' : 'p-8'}`}
             style={{
                 background: `linear-gradient(135deg, rgba(255, 255, 255, 0.04), ${roomColor}08)`,
                 borderColor: `${roomColor}30`,
@@ -96,66 +99,64 @@ const ActiveRoomCard: React.FC<ActiveRoomCardProps> = ({ session, isCompact, ind
                 </div>
             </div>
 
-            <div className="relative z-10 flex flex-col h-full justify-between gap-4">
+            <div className="relative z-10 flex flex-col h-full justify-between gap-5">
                 <div className="flex justify-between items-start">
-                   <div className="text-right">
-                       <h3 className={`${isCompact ? 'text-2xl' : 'text-4xl'} font-black text-white transition-colors leading-tight mb-2 truncate`}>
+                   <div className="text-right flex-1">
+                       <h3 className={`${isCompact ? 'text-3xl' : 'text-4xl'} font-black text-white transition-colors leading-tight mb-3 break-words`}>
                            {session.services?.name_ar}
                        </h3>
-                       <div className="flex items-center gap-2">
-                           <span className="px-3 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest border"
+                       <div className="flex items-center gap-3">
+                           <span className="px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border"
                                  style={{ backgroundColor: `${roomColor}20`, color: roomColor, borderColor: `${roomColor}40` }}>
                                {session.services?.code}
                            </span>
-                           {!isCompact && (
-                             <span className="text-[10px] font-bold text-white/20 uppercase tracking-tighter">Occupied Session</span>
-                           )}
+                           <span className="text-[10px] font-bold text-white/20 uppercase tracking-tighter hidden sm:inline-block">Occupied Session</span>
                        </div>
                    </div>
                 </div>
 
-                {!isCompact && (
-                    <div className="flex items-center justify-between bg-white/[0.03] p-4 rounded-2xl border border-white/5">
-                        <div className="text-right">
-                            <p className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-1">المستخدم الحالي</p>
-                            <p className="text-xl font-black text-white truncate max-w-[200px]">
-                                {session.user_name || session.customers?.full_name || 'عميل كلاسيك'}
-                            </p>
-                        </div>
-                        <User className="text-white/10" size={32} />
+                {/* User Info (Always shown, adapts to compact) */}
+                <div className="flex items-center justify-between bg-white/[0.03] p-4 rounded-[1.5rem] border border-white/5 shadow-inner">
+                    <div className="text-right w-full">
+                        <p className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-1.5 flex items-center gap-2">
+                             <User size={12} className="text-white/20" /> المستخدم الحالي
+                        </p>
+                        <p className={`font-black text-white break-words leading-tight ${isCompact ? 'text-lg' : 'text-xl'}`}>
+                            {displayUser}
+                        </p>
                     </div>
-                )}
+                </div>
 
-                <div className={`grid ${isCompact ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
+                <div className={`grid ${isCompact ? 'grid-cols-2' : 'grid-cols-3'} gap-3 mt-1`}>
                     {!isCompact && (
-                        <div className="bg-white/[0.02] p-4 rounded-2xl border border-white/5 flex flex-col items-center justify-center">
-                            <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">وقت البدء</p>
+                        <div className="bg-white/[0.02] p-3 rounded-2xl border border-white/5 flex flex-col items-center justify-center">
+                            <p className="text-[9px] font-black text-white/20 uppercase tracking-widest mb-1">وقت البدء</p>
                             <p className="text-lg font-bold text-white/80">{formatArabicTime(startTime)}</p>
                         </div>
                     )}
-                    <div className="p-4 rounded-2xl border flex flex-col items-center justify-center" style={{ backgroundColor: `${roomColor}10`, borderColor: `${roomColor}20` }}>
-                        <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: `${roomColor}80` }}>متاحة الساعة</p>
+                    <div className="p-3 rounded-2xl border flex flex-col items-center justify-center" style={{ backgroundColor: `${roomColor}10`, borderColor: `${roomColor}20` }}>
+                        <p className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color: `${roomColor}80` }}>متاحة الساعة</p>
                         <div className="flex items-center gap-2" style={{ color: roomColor }}>
-                            <p className={`${isCompact ? 'text-xl' : 'text-2xl'} font-black leading-none`}>
-                                {endTime ? formatArabicTime(endTime) : 'قريباً'}
+                            <p className={`${isCompact ? 'text-lg' : 'text-xl'} font-black leading-none`}>
+                                {endTime ? formatArabicTime(endTime) : 'غير محدد'}
                             </p>
                         </div>
                     </div>
-                    <div className="p-4 rounded-2xl border flex flex-col items-center justify-center" style={{ backgroundColor: `${roomColor}05`, borderColor: `${roomColor}10` }}>
-                        <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: `${roomColor}60` }}>فاضية بعد</p>
+                    <div className="p-3 rounded-2xl border flex flex-col items-center justify-center" style={{ backgroundColor: `${roomColor}05`, borderColor: `${roomColor}10` }}>
+                        <p className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color: `${roomColor}60` }}>متبقي</p>
                         <div className="flex items-center gap-2" style={{ color: roomColor }}>
-                            <Timer size={isCompact ? 14 : 18} />
-                            <p className={`${isCompact ? 'text-lg' : 'text-xl'} font-black`}>{remaining}</p>
+                            <Timer size={14} />
+                            <p className={`${isCompact ? 'text-base' : 'text-lg'} font-black`}>{remaining}</p>
                         </div>
                     </div>
                 </div>
 
-                {endTime && !isCompact && (
-                    <div className="space-y-1.5 mt-2">
+                {endTime ? (
+                    <div className="space-y-2 mt-2">
                         <div className="flex justify-between text-[10px] font-black text-white/20 uppercase">
                             <span>{progress.toFixed(0)}%</span>
                         </div>
-                        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden p-0.5">
+                        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden flex items-start p-0.5">
                             <motion.div 
                                 initial={{ width: 0 }}
                                 animate={{ width: `${progress}%` }}
@@ -165,6 +166,8 @@ const ActiveRoomCard: React.FC<ActiveRoomCardProps> = ({ session, isCompact, ind
                             />
                         </div>
                     </div>
+                ) : (
+                    <div className="mt-2 h-1.5" />
                 )}
             </div>
 
@@ -292,8 +295,8 @@ export const PremiumDisplay = () => {
         const count = sessions.length;
         if (count === 0) return { cols: 1, compact: false, gap: 8 };
         if (count === 1) return { cols: 1, compact: false, gap: 10 };
-        if (count === 2) return { cols: 1, compact: false, gap: 10 };
-        if (count === 3) return { cols: 2, compact: false, gap: 8 }; // 2 cols, one will span or just be centered
+        if (count === 2) return { cols: 2, compact: false, gap: 10 };
+        if (count === 3) return { cols: 3, compact: false, gap: 8 };
         if (count === 4) return { cols: 2, compact: false, gap: 8 };
         if (count <= 6) return { cols: 3, compact: false, gap: 6 };
         if (count <= 9) return { cols: 3, compact: true, gap: 4 };
