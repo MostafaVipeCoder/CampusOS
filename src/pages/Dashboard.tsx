@@ -47,12 +47,12 @@ export const Dashboard = ({ branchId }: { branchId?: string }) => {
       // 2. Daily Revenue (Sessions + Subscriptions + Petty Adds)
       const [sessionsRes, subsRes, pettyRes] = await Promise.all([
         (supabase as any).from('workspace_sessions').select('total_amount').eq('branch_id', branchId).eq('status', 'completed').gte('end_time', todayISO),
-        (supabase as any).from('subscriptions').select('price').eq('branch_id', branchId).gte('created_at', todayISO),
+        (supabase as any).from('subscriptions').select('paid').eq('branch_id', branchId).gte('created_at', todayISO),
         (supabase as any).from('petty_cash').select('amount').eq('branch_id', branchId).eq('type', 'add').gte('created_at', todayISO)
       ]);
 
       const sessionRevenue = sessionsRes.data?.reduce((acc: number, v: any) => acc + (Number(v.total_amount) || 0), 0) || 0;
-      const subRevenue = subsRes.data?.reduce((acc: number, v: any) => acc + (Number(v.price) || 0), 0) || 0;
+      const subRevenue = subsRes.data?.reduce((acc: number, v: any) => acc + (Number(v.paid) || 0), 0) || 0;
       const pettyRevenue = pettyRes.data?.reduce((acc: number, v: any) => acc + (Number(v.amount) || 0), 0) || 0;
       
       const dailyRevenue = sessionRevenue + subRevenue + pettyRevenue;

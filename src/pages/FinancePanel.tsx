@@ -182,13 +182,13 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         { data: petty }
       ] = await Promise.all([
         (supabase as any).from('workspace_sessions').select('total_amount').eq('branch_id', branchId).eq('status', 'completed'),
-        (supabase as any).from('subscriptions').select('price').eq('branch_id', branchId),
+        (supabase as any).from('subscriptions').select('paid').eq('branch_id', branchId),
         (supabase as any).from('expenses').select('amount').eq('branch_id', branchId),
         (supabase as any).from('petty_cash').select('amount, type').eq('branch_id', branchId)
       ]);
 
       const sessionsSum = (sessions as any[])?.reduce((s, b) => s + (Number(b.total_amount) || 0), 0) || 0;
-      const subsSum = (subscriptions as any[])?.reduce((s, b) => s + (Number(b.price) || 0), 0) || 0;
+      const subsSum = (subscriptions as any[])?.reduce((s, b) => s + (Number(b.paid) || 0), 0) || 0;
       const expenseSum = (expenses as any[])?.reduce((s, b) => s + (Number(b.amount) || 0), 0) || 0;
       
       const pettyInSum = (petty as any[])?.filter(p => p.type === 'add').reduce((s, b) => s + (Number(b.amount) || 0), 0) || 0;
@@ -316,7 +316,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
       // 2. Fetch Subscriptions Income (Cash in)
       const { data: subs } = await supabase
         .from('subscriptions')
-        .select('price')
+        .select('paid')
         .eq('branch_id', branchId)
         .gte('created_at', `${dateStr}T00:00:00`)
         .lte('created_at', `${dateStr}T23:59:59`);
@@ -352,7 +352,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         }
       });
 
-      const subIncome = subs?.reduce((s, b) => s + (Number(b.price) || 0), 0) || 0;
+      const subIncome = subs?.reduce((s, b) => s + (Number(b.paid) || 0), 0) || 0;
       
       // ONLY include actual cash payments in totalIncome
       const totalIncome = workspaceCash + cateringCash + subIncome;
@@ -423,7 +423,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
       // 2. Fetch Monthly Subscriptions
       const { data: subs } = await (supabase as any)
         .from('subscriptions')
-        .select('price')
+        .select('paid')
         .eq('branch_id', branchId)
         .gte('created_at', `${firstDay}T00:00:00`)
         .lte('created_at', `${lastDay}T23:59:59`);
@@ -448,7 +448,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         }
       });
 
-      const subIncome = subs?.reduce((s: number, b: any) => s + (b.price || 0), 0) || 0;
+      const subIncome = subs?.reduce((s: number, b: any) => s + (b.paid || 0), 0) || 0;
       const totalIncome = workspaceCash + cateringCash + subIncome;
       const totalExpense = expenses?.reduce((s: number, e: any) => s + (e.amount || 0), 0) || 0;
 

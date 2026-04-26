@@ -357,7 +357,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
       // 2. Fetch Subscriptions for the selected day
       const { data: subsData } = await (supabase as any)
         .from('subscriptions')
-        .select('price')
+        .select('paid')
         .eq('branch_id', branchId)
         .gte('created_at', startISO)
         .lte('created_at', endISO);
@@ -499,7 +499,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
   const corporateIncome = sessions
     .filter(s => s.payment_method === 'corporate')
     .reduce((acc, s) => acc + (Number(s.total_amount) || 0), 0);
-  const subsIncome = subscriptions.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+  const subsIncome = subscriptions.reduce((acc, s) => acc + (Number(s.paid) || 0), 0);
   
   const totalCashIn = cashSessionsIncome + subsIncome;
   const totalCashOut = expenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
