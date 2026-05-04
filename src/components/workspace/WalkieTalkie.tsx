@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Phone, PhoneOff, Radio, Volume2, AlertCircle, X } from 'lucide-react';
+import { Mic, Phone, PhoneOff, Radio, Volume2, AlertCircle, X, Bell } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface WalkieTalkieProps {
@@ -81,8 +81,22 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
           endCall(false);
         }
       })
-      .on('broadcast', { event: 'ptt_status' }, ({ payload }: any) => {
-        // Handle visual feedback
+      .on('broadcast', { event: 'ping' }, ({ payload }: any) => {
+        console.log('[WalkieTalkie] Received ping', payload);
+        if (isAdmin) {
+          playAlertSound();
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification("تنبيه عاجل من عميل 🔔", {
+              body: `العميل ${payload.userName} يناديك الآن للمساعدة`,
+              icon: '/logo.png',
+              tag: 'ping-alert',
+              requireInteraction: true,
+              silent: false
+            } as any);
+          }
+          setError(`تنبيه: ${payload.userName} يحتاج للمساعدة فوراً!`);
+          setTimeout(() => setError(null), 10000);
+        }
       })
       .subscribe((status: string) => {
         console.log(`[WalkieTalkie] Subscription status: ${status}`);
@@ -159,6 +173,26 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
       ringtoneRef.current.pause();
       ringtoneRef.current.currentTime = 0;
     }
+  };
+
+  const playAlertSound = () => {
+    // Louder digital chime sound
+    const alert = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    alert.volume = 1.0;
+    alert.play().catch(e => console.warn("Alert sound failed:", e));
+    
+    // Repeat after 1 second for emphasis
+    setTimeout(() => {
+      const alert2 = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+      alert2.volume = 1.0;
+      alert2.play().catch(() => {});
+    }, 1000);
+  };
+
+  const pingAdmin = () => {
+    sendWithFallback('ping', { userId, userName });
+    setError("تم إرسال تنبيه للمسؤول.. سيحضر إليك قريباً");
+    setTimeout(() => setError(null), 5000);
   };
 
   const checkPermissions = async () => {
@@ -311,14 +345,24 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
       <audio ref={remoteAudioRef} autoPlay />
       
       {status === 'idle' && !isAdmin && (
-        <button
-          onClick={initiateCall}
-          className="group relative flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white px-5 py-2.5 rounded-2xl text-[10px] font-black transition-all active:scale-95 shadow-lg shadow-indigo-900/30 overflow-hidden"
-        >
-          <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <Radio size={14} className="animate-pulse" />
-          <span className="relative z-10 uppercase tracking-widest">تحدث مع المسؤول</span>
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={initiateCall}
+            className="group relative flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white px-5 py-2.5 rounded-2xl text-[10px] font-black transition-all active:scale-95 shadow-lg shadow-indigo-900/30 overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <Radio size={14} className="animate-pulse" />
+            <span className="relative z-10 uppercase tracking-widest">تحدث مع المسؤول</span>
+          </button>
+          
+          <button
+            onClick={pingAdmin}
+            className="group relative flex items-center justify-center gap-2 bg-white/5 border border-white/10 hover:border-amber-500/50 text-white px-5 py-2.5 rounded-2xl text-[10px] font-black transition-all active:scale-95 shadow-lg"
+          >
+            <Bell size={14} className="text-amber-500 group-hover:animate-ring" />
+            <span className="relative z-10 uppercase tracking-widest">مناداة المسؤول</span>
+          </button>
+        </div>
       )}
 
       {status === 'calling' && (
