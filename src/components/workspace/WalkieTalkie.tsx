@@ -15,6 +15,7 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
   const [isTalking, setIsTalking] = useState(false);
   const [remoteUser, setRemoteUser] = useState<{ id: string, name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [callQueue, setCallQueue] = useState<{ id: string, name: string, time: number }[]>([]);
   
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -48,13 +49,16 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
       .on('broadcast', { event: 'call_request' }, ({ payload }: any) => {
         console.log('[WalkieTalkie] Received call_request', payload);
         if (isAdmin) {
+          // Add to queue if not already there
+          setCallQueue(prev => {
+            if (prev.some(c => c.id === payload.userId)) return prev;
+            return [...prev, { id: payload.userId, name: payload.userName, time: Date.now() }];
+          });
+
           if (statusRef.current === 'idle') {
             setRemoteUser({ id: payload.userId, name: payload.userName });
             setStatus('incoming');
             playRingtone(payload.userName);
-          } else if (statusRef.current !== 'incoming') {
-            // Send busy signal back to the requester
-            sendWithFallback('busy', { targetId: payload.userId });
           }
         }
       })
@@ -189,8 +193,29 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
     }, 1000);
   };
 
+  const [lastPingTime, setLastPingTime] = useState(0);
+  const [pingCooldown, setPingCooldown] = useState(0);
+
+  useEffect(() => {
+    let timer: any;
+    if (pingCooldown > 0) {
+      timer = setInterval(() => {
+        setPingCooldown(prev => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [pingCooldown]);
+
   const pingAdmin = () => {
+    const now = Date.now();
+    if (now - lastPingTime < 30000) {
+      setError(`يرجى الانتظار ${pingCooldown} ثانية قبل الإرسال مرة أخرى`);
+      return;
+    }
+
     sendWithFallback('ping', { userId, userName });
+    setLastPingTime(now);
+    setPingCooldown(30);
     setError("تم إرسال تنبيه للمسؤول.. سيحضر إليك قريباً");
     setTimeout(() => setError(null), 5000);
   };
@@ -357,10 +382,17 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
           
           <button
             onClick={pingAdmin}
-            className="group relative flex items-center justify-center gap-2 bg-white/5 border border-white/10 hover:border-amber-500/50 text-white px-5 py-2.5 rounded-2xl text-[10px] font-black transition-all active:scale-95 shadow-lg"
+            disabled={pingCooldown > 0}
+            className={`group relative flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-[10px] font-black transition-all active:scale-95 shadow-lg ${
+              pingCooldown > 0 
+                ? 'bg-white/5 text-slate-500 cursor-not-allowed border-transparent' 
+                : 'bg-white/5 border border-white/10 hover:border-amber-500/50 text-white'
+            }`}
           >
-            <Bell size={14} className="text-amber-500 group-hover:animate-ring" />
-            <span className="relative z-10 uppercase tracking-widest">مناداة المسؤول</span>
+            <Bell size={14} className={pingCooldown > 0 ? 'text-slate-600' : 'text-amber-500 group-hover:animate-ring'} />
+            <span className="relative z-10 uppercase tracking-widest">
+              {pingCooldown > 0 ? `انتظر ${pingCooldown} ثانية` : 'مناداة المسؤول'}
+            </span>
           </button>
         </div>
       )}
@@ -373,29 +405,73 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
         </div>
       )}
 
+      {isAdmin && callQueue.length > 0 && status === 'idle' && (
+        <div className={`${isEmbedded ? 'w-full' : 'fixed bottom-24 right-6 z-[200] max-w-xs'} bg-slate-900 border border-indigo-500/30 p-6 rounded-[2rem] shadow-2xl animate-in slide-in-from-right-10 duration-500`}>
+          <div className="flex items-center justify-between mb-4 flex-row-reverse">
+             <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest">طلبات مساعدة ({callQueue.length})</h3>
+             <Radio size={14} className="text-indigo-500 animate-pulse" />
+          </div>
+          
+          <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+            {callQueue.map((call) => (
+              <div key={call.id} className="bg-white/5 border border-white/5 p-4 rounded-2xl flex items-center justify-between flex-row-reverse">
+                <div className="text-right">
+                  <p className="text-sm font-black text-white">{call.name}</p>
+                  <p className="text-[10px] text-slate-500 font-bold">منذ {Math.floor((Date.now() - call.time)/1000)} ثانية</p>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => {
+                      setRemoteUser({ id: call.id, name: call.name });
+                      setStatus('incoming');
+                      playRingtone(call.name);
+                    }}
+                    className="w-10 h-10 bg-emerald-600/20 text-emerald-500 rounded-xl flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-all"
+                  >
+                    <Volume2 size={18} />
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setCallQueue(prev => prev.filter(c => c.id !== call.id));
+                      sendWithFallback('busy', { targetId: call.id });
+                    }}
+                    className="w-10 h-10 bg-rose-500/10 text-rose-500 rounded-xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
+                  >
+                    <PhoneOff size={18} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {status === 'incoming' && (
         <div className={`${isEmbedded ? 'w-full' : 'fixed bottom-24 right-6 z-[200] max-w-xs animate-in slide-in-from-right-10'} bg-slate-900 border border-indigo-500/30 p-6 rounded-[2rem] shadow-2xl duration-500`}>
-          <div className="flex items-center gap-4 mb-4">
-             <div className="w-12 h-12 bg-indigo-500 rounded-2xl flex items-center justify-center text-white animate-pulse">
-                <Phone size={24} />
+          <div className="flex flex-col items-center text-center gap-4 py-4">
+             <div className="w-20 h-20 bg-indigo-500 rounded-3xl flex items-center justify-center text-white animate-bounce shadow-xl shadow-indigo-500/20">
+                <Phone size={40} />
              </div>
-             <div className="text-right flex-1">
-                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">طلب اتصال صوتي</p>
-                <h4 className="text-white font-black">{remoteUser?.name}</h4>
+             <div className="space-y-1">
+                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">مكالمة واردة من</p>
+                <h4 className="text-2xl font-black text-white">{remoteUser?.name}</h4>
              </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-3 mt-6">
              <button 
                onClick={acceptCall}
-               className="flex-1 h-12 bg-emerald-600 text-white rounded-xl font-black text-sm flex items-center justify-center gap-2 hover:bg-emerald-500 transition-all"
+               className="flex-1 h-14 bg-emerald-600 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-900/30"
              >
-                <Volume2 size={16} /> قبول
+                <Volume2 size={24} /> قبول
              </button>
              <button 
-               onClick={() => endCall(false)}
-               className="w-12 h-12 bg-rose-500/10 text-rose-500 rounded-xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
+               onClick={() => {
+                 setCallQueue(prev => prev.filter(c => c.id !== remoteUser?.id));
+                 endCall(false);
+               }}
+               className="w-14 h-14 bg-rose-500/10 text-rose-500 rounded-2xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
              >
-                <PhoneOff size={18} />
+                <PhoneOff size={24} />
              </button>
           </div>
         </div>

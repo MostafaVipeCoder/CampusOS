@@ -121,18 +121,6 @@ export const SupportCenter = ({ branchId }: { branchId?: string }) => {
             isEmbedded={true}
           />
         </div>
-
-        {/* Empty State / Listening Indicator - Only show if not in a call */}
-        <div className="bg-white/[0.02] border border-white/5 border-dashed rounded-[2.5rem] p-12 flex flex-col items-center text-center space-y-4">
-           <div className="w-20 h-20 rounded-full border-4 border-indigo-500/20 flex items-center justify-center relative">
-              <div className="absolute inset-0 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-              <Radio size={32} className="text-indigo-500" />
-           </div>
-           <div className="space-y-1">
-              <p className="font-black text-white">في انتظار طلبات الدعم</p>
-              <p className="text-xs font-bold text-slate-500">سيظهر تنبيه صوتي ومرئي فور طلب أحد العملاء للمساعدة</p>
-           </div>
-        </div>
       </div>
     </div>
   );
