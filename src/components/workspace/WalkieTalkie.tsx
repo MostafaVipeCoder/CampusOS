@@ -94,7 +94,7 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
       })
       .on('broadcast', { event: 'call_end' }, ({ payload }: any) => {
         if (remoteUserRef.current?.id === payload.senderId) {
-          endCall(false);
+          endCall(true); // Silent end
         }
       })
       .on('broadcast', { event: 'ping' }, ({ payload }: any) => {
@@ -377,17 +377,29 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
 
   const endCall = (silent: boolean) => {
     stopRingtone();
-    if (!silent && remoteUser) {
+    
+    // Broadcast end call if not silent
+    if (!silent) {
       sendWithFallback('call_end', { senderId: userId });
     }
 
-    if (pcRef.current) pcRef.current.close();
-    if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
+    // Cleanup WebRTC
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
     
-    pcRef.current = null;
-    localStreamRef.current = null;
+    // Stop tracks
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
+    }
+
+    // Reset UI
     setStatus('idle');
     setRemoteUser(null);
+    setIsTalking(false);
+    setError(null);
   };
 
   const togglePTT = () => {
