@@ -80,6 +80,18 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
           handleSignaling(payload.signalData, payload.senderId);
         }
       })
+      .on('broadcast', { event: 'call_accepted_by_admin' }, ({ payload }: any) => {
+        if (isAdmin && payload.targetId === branchId) {
+          // If I was showing an incoming call for this user, stop it
+          if (remoteUserRef.current?.id === payload.userId) {
+            stopRingtone();
+            setStatus('idle');
+            setRemoteUser(null);
+          }
+          // Remove from queue
+          setCallQueue(prev => prev.filter(c => c.id !== payload.userId));
+        }
+      })
       .on('broadcast', { event: 'call_end' }, ({ payload }: any) => {
         if (remoteUserRef.current?.id === payload.senderId) {
           endCall(false);
@@ -107,7 +119,19 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
         isSubscribed.current = status === 'SUBSCRIBED';
       });
 
+    // Heartbeat to keep connection alive
+    const heartbeat = setInterval(() => {
+      if (isSubscribed.current) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'heartbeat',
+          payload: { userId }
+        });
+      }
+    }, 30000);
+
     return () => {
+      clearInterval(heartbeat);
       if (channelRef.current) {
         console.log(`[WalkieTalkie] Leaving channel: ${channelName}`);
         supabase.removeChannel(channelRef.current);
@@ -334,10 +358,21 @@ export const WalkieTalkie = ({ userId, userName, branchId, isAdmin = false, isEm
   };
 
   const acceptCall = () => {
-    stopRingtone();
     if (!remoteUser) return;
+    stopRingtone();
+    
+    // Notify other admin devices to stop ringing for this user
+    sendWithFallback('call_accepted_by_admin', { 
+      userId: remoteUser.id, 
+      targetId: branchId, // scope it to this branch
+      adminId: userId 
+    });
+
+    startWebRTC(remoteUser.id);
     sendWithFallback('call_accept', { userId: remoteUser.id, adminId: userId });
-    // startWebRTC will be triggered by handleSignaling on admin side
+    
+    // Remove from local queue
+    setCallQueue(prev => prev.filter(c => c.id !== remoteUser.id));
   };
 
   const endCall = (silent: boolean) => {
