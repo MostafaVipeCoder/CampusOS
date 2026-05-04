@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal, Button } from '../ui';
-import { Sparkles, Clock, RefreshCw, LogOut, Plus, HelpCircle } from 'lucide-react';
+import { Sparkles, Clock, RefreshCw, LogOut, Plus, HelpCircle, Wind, CheckCircle2, X, Phone } from 'lucide-react';
+import WalkieTalkie from './WalkieTalkie';
 
 interface SessionDashboardProps {
   session: any;
@@ -12,6 +13,7 @@ interface SessionDashboardProps {
   cbRatio: number;
   showCheckoutConfirm: boolean;
   handleCheckoutRequest: () => void;
+  profileData?: any;
 }
 
 export const SessionDashboard = ({
@@ -23,7 +25,8 @@ export const SessionDashboard = ({
   ptsPerHour,
   cbRatio,
   showCheckoutConfirm,
-  handleCheckoutRequest
+  handleCheckoutRequest,
+  profileData
 }: SessionDashboardProps) => {
   return (
     <div className="w-full max-w-lg mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-500 font-['Cairo'] text-right">
@@ -164,6 +167,55 @@ export const SessionDashboard = ({
             </div>
           )}
       </div>
+
+      {/* Support Section */}
+      <div className="space-y-4 pt-4">
+          <div className="flex items-center justify-between px-2 text-right flex-row-reverse">
+             <div className="flex items-center gap-3">
+                <WalkieTalkie 
+                  userId={session.customer_id} 
+                  userName={session.customers?.full_name || 'User'} 
+                  branchId={session.branch_id} 
+                />
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">الدعم الفني والمساعدة</p>
+             </div>
+             <HelpCircle size={14} className="text-indigo-400" />
+          </div>
+          
+          <div className="bg-white/[0.03] backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-6 space-y-4 relative overflow-hidden">
+             <div className="absolute top-0 left-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl -translate-x-10 -translate-y-10" />
+             
+             <div className="grid grid-cols-1 gap-3 relative z-10">
+                {[
+                  { id: 'wifi', text: 'أحتاج للاتصال بالواي فاي', icon: <Wind size={18} />, message: 'أحتاج للمساعدة في الاتصال بشبكة الواي فاي' },
+                  { id: 'activate', text: 'تفعيل الكود الخاص بي', icon: <CheckCircle2 size={18} />, message: 'أحتاج لتفعيل كود الدخول الخاص بي' },
+                  { id: 'internet_error', text: 'كود الإنترنت لا يعمل', icon: <X size={18} />, message: 'كود الإنترنت الخاص بي لا يعمل، أحتاج للمساعدة' },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => {
+                      const phone = '201050868885';
+                      const text = encodeURIComponent(`مرحباً، أنا ${profileData?.full_name || session.customers?.full_name} (${profileData?.code || session.user_code})\n${opt.message}`);
+                      window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
+                    }}
+                    className="flex flex-row-reverse items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-indigo-500/30 rounded-2xl transition-all active:scale-[0.98] group"
+                  >
+                    <div className="flex flex-row-reverse items-center gap-3">
+                      <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-all">
+                        {opt.icon}
+                      </div>
+                      <span className="text-sm font-bold text-white/90">{opt.text}</span>
+                    </div>
+                    <div className="text-slate-600 group-hover:text-indigo-400 transition-colors">
+                      <Phone size={16} />
+                    </div>
+                  </button>
+                ))}
+             </div>
+             
+             <p className="text-center text-[10px] font-bold text-slate-500 mt-2">سيتم تحويلك إلى واتساب للتحدث مع المسؤول مباشرة</p>
+          </div>
+       </div>
 
       {/* Step-by-step confirmation for Checkout */}
       {showCheckoutConfirm && (

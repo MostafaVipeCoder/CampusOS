@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Building2, Users, CreditCard, Plus, Search, 
   Trash2, Edit3, MoreVertical, ExternalLink, 
   ChevronRight, Calendar, User, Mail, 
   ArrowUpRight, ArrowDownRight, LayoutDashboard,
   CheckCircle2, AlertCircle, RefreshCw, X, Filter,
-  Clock, LayoutList
+  Clock, LayoutList, ShieldCheck
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui';
@@ -42,15 +43,17 @@ interface MonthlyContract {
 }
 
 export const BusinessManagement = ({ branchId }: { branchId?: string }) => {
+  const navigate = useNavigate();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [contracts, setContracts] = useState<MonthlyContract[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'companies' | 'contracts' | 'stats'>('companies');
+  const [activeTab, setActiveTab] = useState<'companies' | 'contracts' | 'stats' | 'analysis'>('companies');
   const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [showAddContractModal, setShowAddContractModal] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // "YYYY-MM"
+  const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
   
   // Stats
   const [stats, setStats] = useState({
@@ -98,6 +101,7 @@ export const BusinessManagement = ({ branchId }: { branchId?: string }) => {
   const [filteredCustomers, setFilteredCustomers] = useState<any[]>([]);
   const [spaceReport, setSpaceReport] = useState<any[]>([]);
   const [cateringReport, setCateringReport] = useState<any[]>([]);
+  const [analysisData, setAnalysisData] = useState<any[]>([]);
 
   useEffect(() => {
     fetchData();
@@ -165,6 +169,36 @@ export const BusinessManagement = ({ branchId }: { branchId?: string }) => {
         totalSpaceHours: totalSpaceHrs
       });
 
+      // 6. Generate Analysis Data
+      const analysis = (cos || []).map(company => {
+         const companyContract = (mContracts || []).find(c => c.company_id === company.id);
+         const companySpaceSessions = (sSessions || []).filter(s => s.company_id === company.id);
+         const companyCateringOrders = (cOrders || []).filter(o => o.company_id === company.id);
+
+         const totalSpacePrice = companySpaceSessions.reduce((sum, s) => sum + (Number(s.total_price) || 0), 0);
+         const totalSpaceHours = companySpaceSessions.reduce((sum, s) => sum + (Number(s.duration_hours) || 0), 0);
+         const totalCateringSpent = companyCateringOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+         const prepaidCatering = Number(companyContract?.catering_prepaid_total) || 0;
+         
+         const cateringOverage = Math.max(0, totalCateringSpent - prepaidCatering);
+         const totalToPay = totalSpacePrice + cateringOverage;
+
+         return {
+            companyId: company.id,
+            companyName: company.name,
+            prepaidCatering,
+            remainingCatering: Number(companyContract?.catering_remaining_balance) || 0,
+            spaceRate: Number(companyContract?.space_hour_price) || 0,
+            totalSpaceHours,
+            totalSpaceCost: totalSpacePrice,
+            totalCateringSpent,
+            cateringOverage,
+            totalToPay,
+            status: companyContract?.status || 'No Contract'
+         };
+      });
+      setAnalysisData(analysis);
+
       // 6. Remove global customer fetch to avoid memory/limit issues
       // Customer search is now handled server-side in the modal
       setCustomers([]);
@@ -196,7 +230,7 @@ export const BusinessManagement = ({ branchId }: { branchId?: string }) => {
         
         const { data: orders } = await (supabase as any)
            .from('catering_orders')
-           .select('member_id, amount')
+           .select('member_id, amount, item_name, quantity, price, created_at')
            .eq('company_id', companyId) // Shared wallet uses company_id
            .gte('created_at', startOfMonth)
            .lte('created_at', endOfMonth);
@@ -221,6 +255,7 @@ export const BusinessManagement = ({ branchId }: { branchId?: string }) => {
            return {
               ...m,
               cateringTotal,
+               memberOrders,
               spaceTotalHours,
               spaceTotalCost
            };
@@ -482,7 +517,8 @@ export const BusinessManagement = ({ branchId }: { branchId?: string }) => {
                {[
                  { id: 'companies', label: 'الشركات والأعضاء' },
                  { id: 'contracts', label: 'عقود الشهر' },
-                 { id: 'stats', label: 'الاستهلاك المالي' }
+                 { id: 'stats', label: 'الاستهلاك المالي' },
+                 { id: 'analysis', label: 'التحليل المالي التفصيلي' }
                ].map(tab => (
                  <button 
                     key={tab.id}
@@ -584,6 +620,13 @@ export const BusinessManagement = ({ branchId }: { branchId?: string }) => {
                               className="w-full h-12 bg-white border-2 border-slate-100 text-slate-900 rounded-2xl flex items-center justify-center gap-2 font-black text-xs hover:border-indigo-500 hover:text-indigo-600 transition-all font-['Cairo'] mb-2"
                            >
                               <LayoutList size={14} /> عرض الموظفين والاستهلاك
+                           </button>
+
+                           <button 
+                              onClick={() => navigate(`/admin/owner-profile/${company.id}`)}
+                              className="w-full h-12 bg-indigo-50 border-2 border-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center gap-2 font-black text-xs hover:bg-indigo-100 hover:border-indigo-200 transition-all font-['Cairo'] mb-2"
+                           >
+                              <ShieldCheck size={14} /> عرض ملف صاحب العمل (Owner Profile)
                            </button>
 
                           <button 
@@ -711,6 +754,91 @@ export const BusinessManagement = ({ branchId }: { branchId?: string }) => {
                         </tbody>
                      </table>
                   </div>
+               </div>
+            </div>
+         )}
+
+         {activeTab === 'analysis' && (
+            <div className="space-y-8 animate-in fade-in duration-500">
+               <div className="bg-indigo-50 border-2 border-indigo-100 rounded-[2.5rem] p-8 flex flex-col md:flex-row justify-between items-center gap-6">
+                  <div className="text-right">
+                     <h4 className="text-2xl font-black text-indigo-900 mb-2">ملخص التحليل المالي للشركات</h4>
+                     <p className="text-indigo-600 font-bold">تقرير تفصيلي يوضح المدفوعات المسبقة، الاستهلاك الفعلي، والمبالغ المستحقة لكل شركة عن شهر {selectedMonth}</p>
+                  </div>
+                  <button className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-sm flex items-center gap-2 hover:bg-indigo-700 transition-all">
+                     <Calendar size={18} /> تحميل التقرير كملف Excel
+                  </button>
+               </div>
+
+               <div className="grid grid-cols-1 gap-6">
+                  {analysisData.map((data: any) => (
+                     <div key={data.companyId} className="bg-white border-2 border-slate-100 rounded-[3rem] p-8 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all group">
+                        <div className="flex flex-col lg:flex-row justify-between items-center gap-8">
+                           <div className="text-right flex-1">
+                              <div className="flex items-center justify-end gap-3 mb-2">
+                                 <span className={`px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${data.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                    {data.status}
+                                 </span>
+                                 <h5 className="text-2xl font-black text-slate-800">{data.companyName}</h5>
+                              </div>
+                              <p className="text-slate-400 font-bold text-sm">سعر ساعة المساحة: {data.spaceRate} EGP/Hr</p>
+                           </div>
+
+                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full lg:w-auto">
+                              <div className="bg-slate-50 p-6 rounded-3xl text-center">
+                                 <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Prepaid (Catering)</p>
+                                 <p className="text-xl font-black text-slate-900">{data.prepaidCatering.toLocaleString()}</p>
+                              </div>
+                              <div className="bg-slate-50 p-6 rounded-3xl text-center">
+                                 <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Used (Catering)</p>
+                                 <p className={`text-xl font-black ${data.cateringOverage > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                    {data.totalCateringSpent.toLocaleString()}
+                                 </p>
+                              </div>
+                              <div className="bg-slate-50 p-6 rounded-3xl text-center">
+                                 <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Workspace Hrs</p>
+                                 <p className="text-xl font-black text-indigo-600">{data.totalSpaceHours.toFixed(1)} <span className="text-xs">Hr</span></p>
+                              </div>
+                              <div className="bg-indigo-600 p-6 rounded-3xl text-center text-white ring-8 ring-indigo-50">
+                                 <p className="text-[10px] font-black text-indigo-200 uppercase mb-2">Total To Pay</p>
+                                 <p className="text-2xl font-black">{data.totalToPay.toLocaleString()} <span className="text-xs opacity-50">EGP</span></p>
+                              </div>
+                           </div>
+                        </div>
+
+                        <div className="mt-8 pt-8 border-t border-dashed border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+                           <div className="flex gap-4">
+                              <div className="flex items-center gap-2">
+                                 <div className="w-2 h-2 bg-indigo-500 rounded-full" />
+                                 <p className="text-xs font-black text-slate-600">تكلفة المساحة: {data.totalSpaceCost.toLocaleString()} EGP</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                 <div className={`w-2 h-2 rounded-full ${data.cateringOverage > 0 ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                                 <p className="text-xs font-black text-slate-600">
+                                    {data.cateringOverage > 0 
+                                       ? `عجز الكافتيريا: ${data.cateringOverage.toLocaleString()} EGP` 
+                                       : `رصيد كافتيريا متبقي: ${data.remainingCatering.toLocaleString()} EGP`}
+                                 </p>
+                              </div>
+                           </div>
+                           
+                           <div className="flex gap-2">
+                              <button 
+                                onClick={() => navigate(`/admin/owner-profile/${data.companyId}`)}
+                                className="px-6 py-3 bg-white border-2 border-slate-100 rounded-xl text-xs font-black text-slate-600 hover:border-indigo-500 hover:text-indigo-600 transition-all"
+                              >
+                                 عرض التفاصيل الكاملة
+                              </button>
+                              <button className="px-6 py-3 bg-slate-900 rounded-xl text-xs font-black text-white hover:bg-slate-800 transition-all flex items-center gap-2">
+                                 <Mail size={14} /> إرسال المطالبة المالية
+                              </button>
+                           </div>
+                        </div>
+                     </div>
+                  ))}
+                  {analysisData.length === 0 && (
+                     <div className="py-20 text-center opacity-30 italic font-black uppercase tracking-widest">لا توجد بيانات تحليلية متاحة لهذا الشهر</div>
+                  )}
                </div>
             </div>
          )}
@@ -974,22 +1102,53 @@ export const BusinessManagement = ({ branchId }: { branchId?: string }) => {
                    <span className="text-right">العضو</span>
                 </div>
                 {companyMembers.map((member: any) => (
-                   <div key={member.id} className="flex items-center justify-between p-4 bg-white border-2 border-slate-50 rounded-3xl group hover:border-indigo-200 transition-all hover:shadow-lg">
-                      <button onClick={() => handleRemoveMember(member.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
-                      
-                      <div className="flex-1 grid grid-cols-3 text-center items-center">
-                         <div className="flex flex-col">
-                            <span className="font-black text-slate-900">{member.spaceTotalHours?.toFixed(1) || 0} hr</span>
-                            <span className="text-[9px] text-slate-400">({member.spaceTotalCost || 0} EGP)</span>
-                         </div>
-                         <div className="flex flex-col">
-                            <span className="font-black text-emerald-600">{member.cateringTotal || 0} EGP</span>
-                         </div>
-                         <div className="text-right">
-                           <p className="font-black text-slate-800 text-sm truncate">{member.name}</p>
-                           <p className="text-[10px] font-black text-indigo-500 font-mono tracking-tighter">#{member.unique_code}</p>
+                   <div key={member.id} className="flex flex-col gap-2">
+                      <div 
+                        onClick={() => setExpandedMemberId(expandedMemberId === member.id ? null : member.id)}
+                        className={`flex items-center justify-between p-4 bg-white border-2 rounded-3xl group hover:border-indigo-200 transition-all hover:shadow-lg cursor-pointer ${expandedMemberId === member.id ? 'border-indigo-500 shadow-md' : 'border-slate-50'}`}
+                      >
+                         <button onClick={(e) => { e.stopPropagation(); handleRemoveMember(member.id); }} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
+                         
+                         <div className="flex-1 grid grid-cols-3 text-center items-center">
+                            <div className="flex flex-col">
+                               <span className="font-black text-slate-900">{member.spaceTotalHours?.toFixed(1) || 0} hr</span>
+                               <span className="text-[9px] text-slate-400">({member.spaceTotalCost || 0} EGP)</span>
+                            </div>
+                            <div className="flex flex-col">
+                               <span className="font-black text-emerald-600">{member.cateringTotal || 0} EGP</span>
+                               <span className="text-[8px] font-black text-slate-300 uppercase tracking-tighter">بواسطة العضو</span>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-black text-slate-800 text-sm truncate">{member.name}</p>
+                              <p className="text-[10px] font-black text-indigo-500 font-mono tracking-tighter">#{member.unique_code}</p>
+                            </div>
                          </div>
                       </div>
+
+                      {/* Detailed Catering Expansion */}
+                      {expandedMemberId === member.id && (
+                        <div className="mx-4 bg-slate-50/50 rounded-b-[2rem] border-x-2 border-b-2 border-slate-100 p-6 space-y-4 animate-in slide-in-from-top-4 duration-300">
+                           <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">تفاصيل استهلاك الكافيتريا</h4>
+                           <div className="space-y-2">
+                              {member.memberOrders?.length > 0 ? member.memberOrders.map((o: any, oIdx: number) => (
+                                <div key={oIdx} className="flex justify-between items-center bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+                                   <div className="text-left">
+                                      <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{o.amount} EGP</span>
+                                   </div>
+                                   <div className="text-right flex-1 px-4">
+                                      <p className="text-xs font-black text-slate-700">{o.item_name}</p>
+                                      <p className="text-[9px] text-slate-400">{new Date(o.created_at).toLocaleDateString('ar-EG')} - {new Date(o.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</p>
+                                   </div>
+                                   <div className="text-slate-300 font-black text-[10px] px-2 border-l border-slate-100">
+                                      x{o.quantity}
+                                   </div>
+                                </div>
+                              )) : (
+                                <p className="text-center py-4 text-slate-300 text-[10px] font-black italic uppercase">لا توجد طلبات مسجلة هذا الشهر</p>
+                              )}
+                           </div>
+                        </div>
+                      )}
                    </div>
                 ))}
                 {companyMembers.length === 0 && <p className="text-center py-20 text-slate-300 italic">لا يوجد أعضاء مضافين</p>}

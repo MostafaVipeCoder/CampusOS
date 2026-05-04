@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, CheckCircle2, AlertCircle, RefreshCw, X, Receipt, Users2, Sparkles, Plus, Lock, Briefcase, Layout, DollarSign, Phone, Printer, Smartphone } from 'lucide-react';
+import { Clock, CheckCircle2, AlertCircle, RefreshCw, X, Receipt, Users2, Sparkles, Plus, Lock, Briefcase, Layout, DollarSign, Phone, Printer, Smartphone, ShieldCheck } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { calculateSessionPrice } from '../lib/pricing';
@@ -36,6 +36,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
   const [partnerCode, setPartnerCode] = useState('');
   const [activePartner, setActivePartner] = useState<any>(null);
   const [isVerifyingPartner, setIsVerifyingPartner] = useState(false);
+  const [vfcashWhatsapp, setVfcashWhatsapp] = useState(false);
 
   const SUBSCRIPTION_PACKAGES = [
     { id: 1, name: '40 Hours', hours: 40, price: 320 },
@@ -287,6 +288,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     let overageHours = 0;
     const businessMember = session.customers?.company_members?.[0]; // Get linked business member
     const businessContract = session.customers?.contracts;
+    const isOwner = businessMember?.companies?.leader_phone && session.customers?.phone && 
+                   businessMember.companies.leader_phone === session.customers.phone;
 
     if (activeSub) {
         isSubscribed = true;
@@ -302,8 +305,9 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
             remainingSubHours = rawRemaining;
             workspaceAmount = 0; 
         }
-    } else if (businessMember) {
+    } else if (businessMember || isOwner) {
         // Business logic: Space is logged but not paid now.
+        // If owner, it won't even be logged later in AcceptCheckout.
         workspaceAmount = 0; 
     } else if (session.user_code === 'GUEST_KITCHEN') {
         workspaceAmount = 0;
@@ -317,12 +321,13 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     // If it's a business member, the catering is deducted from their balance, space is logged.
     // So the "At Counter" amount becomes 0 if both are business-covered.
     const isBusiness = !!businessMember;
-    const cateringAmount = isBusiness ? 0 : actualCateringCost;
-    const totalAmount = isBusiness ? 0 : Math.max(0, parseFloat(((Number(workspaceAmount) || 0) + (Number(cateringAmount) || 0)).toFixed(2)));
+    const cateringAmount = (isBusiness || isOwner) ? 0 : actualCateringCost;
+    const totalAmount = (isBusiness || isOwner) ? 0 : Math.max(0, parseFloat(((Number(workspaceAmount) || 0) + (Number(cateringAmount) || 0)).toFixed(2)));
 
     setEditingBill({
       ...session,
       orders,
+      isOwner,
       workspaceAmount: workspaceAmount,
        cateringAmount,
       actualCateringCost,
@@ -363,7 +368,9 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     let remainingSubHours = 0;
     const businessContract = editingBill.contract;
 
-    if (editingBill.isSubscribed) {
+    if (editingBill.isOwner) {
+       workspaceAmount = 0;
+    } else if (editingBill.isSubscribed) {
        const rawRemaining = Number(editingBill.initialRemaining) - usedHours;
        if (rawRemaining < 0) {
            const overageHours = Math.abs(rawRemaining);
@@ -382,7 +389,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     }
 
     const actualCateringCost = (Number(editingBill.actualCateringCost) || 0);
-    const cateringAmount = (businessContract && businessContract.type === 'Business') ? 0 : actualCateringCost;
+    const cateringAmount = (editingBill.isOwner || (businessContract && businessContract.type === 'Business')) ? 0 : actualCateringCost;
     const deductedCashback = Number(editingBill.deductedCashback) || 0;
     // If renewal is selected, workspaceAmount (overage) is covered by the new subscription
     const finalWorkspaceAmount = renewalPkgId ? 0 : workspaceAmount;
@@ -410,7 +417,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     
     const actualCateringCost = newOrders.reduce((sum, o) => sum + ((Number(o.price) || 0) * (Number(o.quantity) || 1)), 0);
     const businessContract = editingBill.contract;
-    const cateringAmount = (businessContract && businessContract.type === 'Business') ? 0 : actualCateringCost;
+    const cateringAmount = (editingBill.isOwner || (businessContract && businessContract.type === 'Business')) ? 0 : actualCateringCost;
     const totalAmount = Math.max(0, parseFloat(((Number(editingBill.workspaceAmount) || 0) + cateringAmount - (Number(editingBill.deductedCashback) || 0)).toFixed(2)));
     
     setEditingBill({
@@ -425,7 +432,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
   const handleRemoveBillItem = (index: number) => {
     if (!editingBill) return;
     const newOrders = editingBill.orders.filter((_: any, i: number) => i !== index);
-    const newCateringAmount = newOrders.reduce((sum, o) => sum + ((Number(o.price) || 0) * (Number(o.quantity) || 1)), 0);
+    const newCateringAmount = (editingBill.isOwner || (editingBill.contract && editingBill.contract.type === 'Business')) ? 0 : newOrders.reduce((sum, o) => sum + ((Number(o.price) || 0) * (Number(o.quantity) || 1)), 0);
     const newTotalAmount = parseFloat(((Number(editingBill.workspaceAmount) || 0) + newCateringAmount).toFixed(2));
     
     setEditingBill({
@@ -487,11 +494,25 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
 
   const updatePaymentMethod = async (sessionId: string, method: string) => {
     try {
+      const updates: any = { payment_method: method };
+      
+      if (method === 'vfcash' || method === 'instapay') {
+        const { data: { user } } = await supabase.auth.getUser();
+        updates.vfcash_admin_id = user?.id; // Reusing columns for simplicity or could add new ones, but usually one admin processes the digital payment
+        updates.vfcash_payment_time = new Date().toISOString();
+        if (method === 'vfcash') {
+          updates.vfcash_whatsapp_confirmed = vfcashWhatsapp;
+        }
+      }
+
       const { error } = await supabase
         .from('workspace_sessions')
-        .update({ payment_method: method })
+        .update(updates)
         .eq('id', sessionId);
       if (error) throw error;
+      
+      // Reset checkbox after update
+      setVfcashWhatsapp(false);
     } catch (err) {
       console.error('Error updating payment method:', err);
     }
@@ -506,7 +527,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
       // Determine payment method
       const busMember = editingBill.customers?.company_members?.[0];
       const isCorporate = !!busMember;
-      const finalPaymentMethod = editingBill.isSubscribed ? 'subscription' : (isCorporate ? 'corporate' : 'cash');
+      const finalPaymentMethod = editingBill.isOwner ? 'owner' : (editingBill.isSubscribed ? 'subscription' : (isCorporate ? 'corporate' : 'cash'));
 
       // 1. Update the session record first
       const { error: sessionError } = await supabase
@@ -604,9 +625,10 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
       // 5. Award Loyalty & Cashback & Handle Business Contract Balance
       if (editingBill.customerId) {
         const busMember = editingBill.customers?.company_members?.[0];
+        const isOwner = editingBill.isOwner;
 
         // NEW Shared Monthly Billing logic
-        if (busMember) {
+        if (busMember && !isOwner) {
             const currentMonth = new Date(editingBill.startTime).toISOString().slice(0, 7);
             
             // 1. Find the contract for this month
@@ -663,7 +685,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
         if (match) {
            prevConvertedMins = parseInt(match[1]);
         }
-        const billableMinsForPoints = Math.max(0, Number(editingBill.diffMinutes || 0) - prevConvertedMins);
+        const billableMinsForPoints = editingBill.isOwner ? 0 : Math.max(0, Number(editingBill.diffMinutes || 0) - prevConvertedMins);
         const pointsToAward = Math.floor(billableMinsForPoints / (60 / pointsPerHour));
         
         // Student Cashback on the PAID amount (Total - Deducted Cashback)
@@ -1389,6 +1411,26 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                 </div>
               )}
 
+              {/* Business Owner Badge */}
+              {editingBill.isOwner && (
+                <div className="bg-amber-500 text-white p-6 rounded-3xl relative overflow-hidden group shadow-xl mb-6">
+                   <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-white/20 to-transparent -z-10" />
+                   <div className="flex justify-between items-center relative z-10 text-right">
+                      <div>
+                         <p className="text-4xl font-black">OWNER</p>
+                         <p className="text-[10px] font-black text-amber-100 uppercase tracking-widest mt-1">Free Business Account</p>
+                      </div>
+                      <div className="text-right flex flex-col items-end">
+                         <div className="flex items-center gap-2 justify-end mb-1">
+                            <h4 className="text-lg font-black">حساب مالك الشركة</h4>
+                            <ShieldCheck size={24} className="text-white" />
+                         </div>
+                         <p className="text-xs font-bold text-amber-50">لا يتم احتساب ساعات أو طلبات لهذا الحساب</p>
+                      </div>
+                   </div>
+                </div>
+              )}
+
               {/* Business Contract Info Badge */}
               {editingBill.contract?.type === 'Business' && (
                 <div className="bg-slate-900 text-white mb-6 p-6 rounded-3xl relative overflow-hidden group shadow-xl">
@@ -1476,8 +1518,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                           const val = parseFloat(e.target.value) || 0;
                           setEditingBill({...editingBill, workspaceAmount: val, totalAmount: parseFloat((val + editingBill.cateringAmount).toFixed(2))});
                         }}
-                        className={`w-24 h-10 text-center font-black bg-white border-2 border-slate-200 rounded-xl focus:border-[#f78c2a] focus:ring-4 focus:ring-[#f78c2a]/10 outline-none text-sm transition-all ${editingBill.isSubscribed ? 'opacity-30' : ''}`} 
-                        disabled={editingBill.isSubscribed}
+                        className={`w-24 h-10 text-center font-black bg-white border-2 border-slate-200 rounded-xl focus:border-[#f78c2a] focus:ring-4 focus:ring-[#f78c2a]/10 outline-none text-sm transition-all ${editingBill.isSubscribed || editingBill.isOwner ? 'opacity-30' : ''}`} 
+                        disabled={editingBill.isSubscribed || editingBill.isOwner}
                       />
                     </div>
                 </div>
@@ -1570,7 +1612,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
               </div>
 
               {/* Loyalty & Cashback Section */}
-              {editingBill.customerId && (
+              {editingBill.customerId && !editingBill.isOwner && (
                 <div className="bg-emerald-50/50 p-6 rounded-[2.5rem] border border-emerald-100/50 space-y-4">
                   <div className="flex justify-between items-center">
                     <div className="text-right">
@@ -1650,10 +1692,10 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
               <div className="mt-8 pt-8 border-t border-slate-100">
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-8 text-center sm:text-right">
                     <div className="w-full sm:w-auto text-right">
-                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1">الإجمالي المستحق</p>
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1">{editingBill.isOwner ? 'حساب مالك' : 'الإجمالي المستحق'}</p>
                        <div className="flex items-center justify-end gap-2">
-                         <span className="text-4xl sm:text-5xl font-black text-emerald-600 tracking-tighter">{editingBill.totalAmount}</span>
-                         <span className="text-[10px] sm:text-sm font-black text-slate-300">EGP</span>
+                         <span className="text-4xl sm:text-5xl font-black text-emerald-600 tracking-tighter">{editingBill.isOwner ? 'FREE' : editingBill.totalAmount}</span>
+                         <span className="text-[10px] sm:text-sm font-black text-slate-300">{editingBill.isOwner ? 'ACCOUNT' : 'EGP'}</span>
                        </div>
                     </div>
                     <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
@@ -1803,21 +1845,31 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                     <DollarSign size={24} className="mb-2 text-emerald-400" />
                     تحصيل كاش
                   </button>
-                  <button
-                    onClick={() => {
-                        const amount = checkoutBill.totalAmount;
-                        const ussdCode = `*9*7*01007480906*${amount}#`;
-                        if (confirm(`تحويل فودافون كاش (${amount} ج.م)؟\nسيتم فتح لوحة الاتصال بالكود المباشر.`)) {
+                  <div className="flex flex-col gap-4">
+                    <button
+                      onClick={() => {
+                        const amount = checkoutBill.total_amount || checkoutBill.totalAmount;
+                        if (confirm(`تأكيد استلام ${amount} ج.م عبر فودافون كاش؟`)) {
                            updatePaymentMethod(checkoutBill.id, 'vfcash');
-                           window.location.href = `tel:${ussdCode.replace('#', '%23')}`;
+                           setCheckoutBill(null);
                         }
-                    }}
-                    className="group relative flex flex-col items-center justify-center py-6 bg-rose-600 text-white font-black rounded-[2.5rem] shadow-xl hover:bg-rose-700 hover:-translate-y-1 active:scale-95 transition-all text-sm overflow-hidden"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <Phone size={24} className="mb-2 text-rose-200" />
-                    فودافون كاش
-                  </button>
+                      }}
+                      className="group relative flex flex-col items-center justify-center py-6 bg-rose-600 text-white font-black rounded-[2.5rem] shadow-xl hover:bg-rose-700 hover:-translate-y-1 active:scale-95 transition-all text-sm overflow-hidden w-full h-full"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <Phone size={24} className="mb-2 text-rose-200" />
+                      فودافون كاش
+                    </button>
+                    <label className="flex items-center justify-center gap-3 bg-rose-50 p-4 rounded-2xl border border-rose-100 cursor-pointer hover:bg-rose-100 transition-all">
+                      <input 
+                        type="checkbox" 
+                        checked={vfcashWhatsapp} 
+                        onChange={(e) => setVfcashWhatsapp(e.target.checked)}
+                        className="w-5 h-5 rounded-lg border-rose-200 text-rose-600 focus:ring-rose-500"
+                      />
+                      <span className="text-[10px] font-black text-rose-700">تم إرسال سكرين التحويل واتساب؟</span>
+                    </label>
+                  </div>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">

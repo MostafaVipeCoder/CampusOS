@@ -5,20 +5,21 @@ import {
   ArrowUpRight, DollarSign, Calendar, ChevronRight,
   ChevronLeft, Plus, Save, Calculator, CheckCircle2,
   AlertCircle, Receipt, Printer, X, Wallet, ArrowRightLeft,
-  ChevronUp, ChevronDown, Lock, Edit, Trash2
+  ChevronUp, ChevronDown, Lock, Edit, Trash2, Phone, Smartphone, Users2
 } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input, Modal } from '../components/ui';
 import { supabase } from '../lib/supabase';
 
 export const FinancePanel = ({ branchId }: { branchId?: string }) => {
-  const [activeTab, setActiveTab] = useState<'daily' | 'monthly' | 'annual'>('daily');
+  const [activeTab, setActiveTab] = useState<'daily' | 'monthly' | 'annual' | 'digital'>('daily');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewDate, setViewDate] = useState(new Date());
   const [dailyData, setDailyData] = useState({
     income: 0,
     expense: 0,
-    details: { catering: 0, rooms: 0, workspace: 0, subscriptions: 0, corporate: 0 }
+    details: { catering: 0, rooms: 0, workspace: 0, subscriptions: 0, corporate: 0, vfcash: 0, instapay: 0 },
+    vfcashPayments: [] as any[]
   });
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -224,6 +225,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
 
 
   const saveFinanceSummaryOffset = async (key: string, newValue: number) => {
+    if (!branchId) return;
     try {
       setLoading(true);
       const isBaseManual = ['cash_athar', 'safe_balance'].includes(key);
@@ -307,7 +309,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
       // 1. Fetch Workspace Sessions Income
       const { data: sessions } = await (supabase as any)
         .from('workspace_sessions')
-        .select('total_amount, catering_amount, payment_method')
+        .select('total_amount, catering_amount, payment_method, vfcash_admin_id, vfcash_payment_time, vfcash_whatsapp_confirmed, user_name, user_code, id, end_time, profiles:vfcash_admin_id(full_name)')
         .eq('branch_id', branchId)
         .eq('status', 'completed')
         .gte('end_time', `${dateStr}T00:00:00`)
@@ -336,17 +338,23 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         .eq('type', 'add')
         .gte('created_at', `${dateStr}T00:00:00`);
 
-      let workspaceCash = 0, cateringCash = 0, corporateUsage = 0;
+      let workspaceCash = 0, cateringCash = 0, corporateUsage = 0, vfcashIncome = 0, instapayIncome = 0;
+      const vfcashPayments: any[] = [];
       
       sessions?.forEach(s => {
+        if (s.payment_method === 'owner') return;
         const cat = Number(s.catering_amount) || 0;
-        const total = Number(s.total_amount) || 0; // The bill amount
+        const total = Number(s.total_amount) || 0;
         
         if (s.payment_method === 'corporate') {
-           // Do not add to cash expected. Track as corporate consumption.
            corporateUsage += total;
+        } else if (s.payment_method === 'vfcash') {
+           vfcashIncome += total;
+           vfcashPayments.push(s);
+        } else if (s.payment_method === 'instapay') {
+           instapayIncome += total;
+           vfcashPayments.push(s);
         } else {
-           // Normal cash session or subscription cash-payment for extras
            cateringCash += cat;
            workspaceCash += Math.max(0, total - cat);
         }
@@ -365,9 +373,12 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
            catering: cateringCash, 
            rooms: 0, 
            workspace: workspaceCash, 
+           vfcash: vfcashIncome,
+           instapay: instapayIncome,
            subscriptions: subIncome,
-           corporate: corporateUsage 
-        }
+           corporate: corporateUsage
+        },
+        vfcashPayments
       });
 
       // Load existing inventory/closing if it exists
@@ -460,8 +471,11 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
            rooms: 0, 
            workspace: workspaceCash,
            subscriptions: subIncome,
-           corporate: corporateUsage 
-        }
+           corporate: corporateUsage,
+           vfcash: 0,
+           instapay: 0
+        },
+        vfcashPayments: []
       });
     } catch (err) {
       console.error(err);
@@ -625,7 +639,9 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         actual_cash: totalCountedCash,
         difference: cashDiff,
         is_finalized: true,
-        denominations: cashDrawer
+        denominations: cashDrawer,
+        vfcash_total: dailyData.details.vfcash,
+        instapay_total: dailyData.details.instapay
       };
 
       const { error } = await (supabase as any)
@@ -737,9 +753,9 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title="الدخل النقدي للمكان" value={dailyData.income.toLocaleString()} icon={TrendingUp} trend={8} />
+        <StatCard title="فودافون كاش" value={dailyData.details.vfcash.toLocaleString()} icon={Phone} color="rose" />
+        <StatCard title="InstaPay" value={dailyData.details.instapay.toLocaleString()} icon={Smartphone} color="indigo" />
         <StatCard title="مصروفات اليوم" value={dailyData.expense.toLocaleString()} icon={TrendingDown} />
-        <StatCard title="استهلاك الشركات (آجل)" value={dailyData.details.corporate.toLocaleString()} icon={PieChart} />
-        <StatCard title="مبيعات الاشتراكات" value={dailyData.details.subscriptions.toLocaleString()} icon={BarChart3} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -820,9 +836,11 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
               { label: 'مبيعات الاشتراكات', amount: dailyData.details.subscriptions, color: 'bg-indigo-500' },
               { label: 'حجوزات المساحة (كاش)', amount: dailyData.details.workspace, color: 'bg-emerald-500' },
               { label: 'مبيعات الكاترينج (كاش)', amount: dailyData.details.catering, color: 'bg-amber-500' },
+              { label: 'فودافون كاش', amount: dailyData.details.vfcash, color: 'bg-rose-500' },
+              { label: 'إنستا باي', amount: dailyData.details.instapay, color: 'bg-blue-500' },
               { label: 'استهلاك الشركات (آجل)', amount: dailyData.details.corporate, color: 'bg-purple-500' },
             ].map((cat, i) => {
-              const totalBreakdown = dailyData.income + dailyData.details.corporate;
+              const totalBreakdown = dailyData.income + dailyData.details.corporate + dailyData.details.vfcash + dailyData.details.instapay;
               return (
               <div key={i} className="space-y-2">
                 <div className="flex justify-between items-center text-sm">
@@ -834,6 +852,64 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
                 </div>
               </div>
             )})}
+          </CardContent>
+        </Card>
+
+        {/* VF Cash Tracking Table */}
+        <Card className="border-none shadow-xl shadow-slate-100 overflow-hidden">
+          <CardHeader className="bg-rose-600 text-white pb-6">
+            <div className="flex items-center gap-3">
+              <Phone size={20} />
+              <div>
+                <CardTitle className="text-lg">تتبع فودافون كاش</CardTitle>
+                <CardDescription className="text-rose-100">سجل التحويلات اليومية</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-right">
+                <thead className="bg-rose-50 text-[10px] font-black text-rose-600 uppercase tracking-widest">
+                  <tr>
+                    <th className="px-4 py-3">العميل</th>
+                    <th className="px-4 py-3">المبلغ</th>
+                    <th className="px-4 py-3">الادمن</th>
+                    <th className="px-4 py-3">واتساب</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rose-50">
+                  {dailyData.vfcashPayments.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center text-xs font-black text-slate-300">لا يوجد تحويلات اليوم</td>
+                    </tr>
+                  ) : (
+                    dailyData.vfcashPayments.map((p, i) => (
+                      <tr key={i} className="hover:bg-rose-50/30 transition-all">
+                        <td className="px-4 py-4">
+                          <p className="text-xs font-black text-slate-700">{p.user_name || p.user_code}</p>
+                          <p className="text-[8px] text-slate-400">
+                            {p.vfcash_payment_time ? new Date(p.vfcash_payment_time).toLocaleTimeString('ar-EG') : 'N/A'}
+                          </p>
+                        </td>
+                        <td className="px-4 py-4 text-xs font-black text-rose-600">{p.total_amount} ج.م</td>
+                        <td className="px-4 py-4">
+                          <span className="text-[8px] font-black bg-slate-100 px-2 py-1 rounded-lg text-slate-500">
+                            {p.vfcash_admin_id?.slice(0, 8) || 'System'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          {p.vfcash_whatsapp_confirmed ? (
+                            <CheckCircle2 size={16} className="text-emerald-500" />
+                          ) : (
+                            <X size={16} className="text-rose-300" />
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -1142,6 +1218,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
             { id: 'daily', label: 'التقرير اليومي', icon: Calendar },
             { id: 'monthly', label: 'التقرير الشهري', icon: BarChart3 },
             { id: 'annual', label: 'التقرير السنوي', icon: TrendingUp },
+            { id: 'digital', label: 'التحويلات الرقمية', icon: Phone },
           ].map(tab => (
             <button
               key={tab.id}
@@ -1174,7 +1251,10 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         </div>
       </div>
 
-      {activeTab === 'daily' ? renderDaily() : activeTab === 'monthly' ? renderMonthly() : renderAnnual()}
+      {activeTab === 'daily' ? renderDaily() : 
+       activeTab === 'monthly' ? renderMonthly() : 
+       activeTab === 'digital' ? renderDigitalHistory() :
+       renderAnnual()}
 
       {/* Petty Cash Modal - Enhanced Design */}
       <Modal
@@ -1365,8 +1445,110 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
           </div>
         </div>
       </Modal>
+
+      {renderDigitalHistory()}
     </div>
   );
+
+  function renderDigitalHistory() {
+    if (activeTab !== 'digital') return null;
+    
+    return (
+      <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatCard title="إجمالي فودافون كاش" value={dailyData.details.vfcash.toLocaleString()} icon={Phone} color="rose" />
+          <StatCard title="إجمالي InstaPay" value={dailyData.details.instapay.toLocaleString()} icon={Smartphone} color="indigo" />
+          <StatCard title="عدد التحويلات" value={dailyData.vfcashPayments.length.toLocaleString()} icon={Users2} />
+          <StatCard title="معدل التحويل" value={((dailyData.details.vfcash + dailyData.details.instapay) / ((dailyData.income + dailyData.details.vfcash + dailyData.details.instapay) || 1) * 100).toFixed(1) + '%'} icon={TrendingUp} />
+        </div>
+
+        <Card className="border-none shadow-xl shadow-slate-100 overflow-hidden">
+          <CardHeader className="bg-slate-900 text-white pb-8">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-white/10 rounded-2xl">
+                <ArrowRightLeft size={24} className="text-indigo-400" />
+              </div>
+              <div>
+                <CardTitle className="text-xl font-black">تاريخ التحويلات الرقمية</CardTitle>
+                <CardDescription className="text-slate-400">سجل مفصل للتحويلات عبر فودافون كاش وإنستا باي لليوم المحدد</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-right">
+                <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                  <tr>
+                    <th className="px-6 py-4">العميل</th>
+                    <th className="px-6 py-4">الوسيلة</th>
+                    <th className="px-6 py-4">المبلغ</th>
+                    <th className="px-6 py-4">الوقت</th>
+                    <th className="px-6 py-4">المسؤول (الآدمن)</th>
+                    <th className="px-6 py-4">واتساب</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {dailyData.vfcashPayments.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-20 text-center">
+                        <div className="flex flex-col items-center gap-3 text-slate-300">
+                          <Phone size={48} className="opacity-20" />
+                          <p className="font-black text-sm">لا يوجد تحويلات رقمية مسجلة لهذا اليوم</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    dailyData.vfcashPayments.map((p, i) => (
+                      <tr key={i} className="hover:bg-slate-50/50 transition-all group">
+                        <td className="px-6 py-5">
+                          <p className="text-sm font-black text-slate-700">{p.user_name || p.user_code}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Session #{p.id.slice(0, 8)}</p>
+                        </td>
+                        <td className="px-6 py-5">
+                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black inline-flex items-center gap-1.5 ${p.payment_method === 'vfcash' ? 'bg-rose-50 text-rose-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                            {p.payment_method === 'vfcash' ? <Phone size={10} /> : <Smartphone size={10} />}
+                            {p.payment_method === 'vfcash' ? 'Vodafone Cash' : 'InstaPay'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-5">
+                          <p className="text-sm font-black text-slate-900">{p.total_amount} <span className="text-[10px] opacity-40">EGP</span></p>
+                        </td>
+                        <td className="px-6 py-5 text-xs font-bold text-slate-500">
+                          {new Date(p.vfcash_payment_time || p.end_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-indigo-600 font-black text-[10px] border border-slate-200">
+                              {p.profiles?.full_name?.split(' ').map((n: any) => n[0]).join('').slice(0, 2) || 'AD'}
+                            </div>
+                            <div>
+                              <p className="text-xs font-black text-slate-700">{p.profiles?.full_name || 'System Admin'}</p>
+                              <p className="text-[8px] text-slate-400 font-bold uppercase">{p.vfcash_admin_id?.slice(0, 8) || 'AUTO-LOG'}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-5">
+                          {p.vfcash_whatsapp_confirmed ? (
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black border border-emerald-100">
+                              <CheckCircle2 size={12} /> تم التأكيد
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-50 text-rose-300 rounded-full text-[10px] font-black border border-rose-100">
+                              <X size={12} /> لم يتم الربط
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 };
 
 export default FinancePanel;

@@ -108,6 +108,7 @@ export const WorkspaceMainUI = ({
             cbRatio={cbRatio}
             showCheckoutConfirm={showCheckoutConfirm}
             handleCheckoutRequest={handleCheckoutRequest}
+            profileData={profileData}
           />
         )}
         

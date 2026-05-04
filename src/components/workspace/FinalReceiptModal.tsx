@@ -126,17 +126,26 @@ export const FinalReceiptModal = ({ bill, onClose, companyName }: FinalReceiptMo
                 )}
                 
                 <div className="pt-10 mt-6 border-t border-slate-200 flex flex-col items-center gap-2">
-                  <span className="text-slate-400 text-[11px] font-black uppercase tracking-[0.2em]">{companyName ? 'عضوية شركة' : 'المبلغ المستحق للدفع'}</span>
+                  <span className="text-slate-400 text-[11px] font-black uppercase tracking-[0.2em]">
+                    {bill.isOwner ? 'حساب مالك الشركة' : (companyName ? 'عضوية شركة' : 'المبلغ المستحق للدفع')}
+                  </span>
                   <div className="relative">
                     <div className="absolute inset-x-0 bottom-1 h-3 bg-emerald-500/10 -rotate-1 rounded-full blur-[2px]" />
                     <p className="text-6xl font-black text-emerald-600 relative z-10 italic">
-                      {companyName ? 'Cloud' : bill.total_amount}
-                      <span className="text-xl opacity-30 ml-3 not-italic">{companyName ? 'Business' : 'EGP'}</span>
+                      {bill.isOwner ? 'FREE' : (companyName ? 'Cloud' : bill.total_amount)}
+                      <span className="text-xl opacity-30 ml-3 not-italic">
+                        {bill.isOwner ? 'Account' : (companyName ? 'Business' : 'EGP')}
+                      </span>
                     </p>
                   </div>
-                  {companyName && (
+                  {companyName && !bill.isOwner && (
                     <p className="text-xs font-bold text-indigo-500 mt-2 bg-indigo-500/5 px-4 py-2 rounded-lg border border-indigo-500/10">
                       سيتم تحصيل المبلغ من حساب شركة {companyName}
+                    </p>
+                  )}
+                  {bill.isOwner && (
+                    <p className="text-xs font-bold text-amber-500 mt-2 bg-amber-500/5 px-4 py-2 rounded-lg border border-amber-500/10">
+                      جلسة خاصة بمالك النشاط (بدون تكلفة)
                     </p>
                   )}
                 </div>

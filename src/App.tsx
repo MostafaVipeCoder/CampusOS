@@ -26,16 +26,25 @@ import { KitchenKiosk } from './pages/KitchenKiosk';
 import { BusinessManagement } from './pages/BusinessManagement';
 import { BusinessKiosk } from './pages/BusinessKiosk';
 import { PremiumDisplay } from './pages/PremiumDisplay';
+import { OwnerProfile } from './pages/OwnerProfile';
+import { SupportCenter } from './pages/SupportCenter';
+
+import WalkieTalkie from './components/workspace/WalkieTalkie';
 
 const DashboardLayout = () => {
   const [branches, setBranches] = useState<Campus[]>([]);
   const [currentCampus, setCampus] = useState<Campus | null>(null);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [adminUser, setAdminUser] = useState<any>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setAdminUser(user);
+    });
+
     const fetchBranches = async () => {
       const { data } = await supabase.from('branches').select('id, name').eq('is_active', true);
       if (data) {
@@ -77,6 +86,14 @@ const DashboardLayout = () => {
 
   return (
     <div className="flex min-h-screen bg-transparent font-['Cairo'] text-slate-800 antialiased selection:bg-indigo-500 selection:text-white overflow-x-hidden">
+      {adminUser && currentCampus && (
+        <WalkieTalkie 
+          userId={adminUser.id} 
+          userName={adminUser.user_metadata?.full_name || 'Admin'} 
+          branchId={currentCampus.id} 
+          isAdmin={true} 
+        />
+      )}
       <Sidebar 
         isOpen={isSidebarOpen} 
         isCollapsed={isSidebarCollapsed}
@@ -129,6 +146,7 @@ const DashboardLayout = () => {
               <Route path="subscriptions" element={<SubscriptionsPanel branchId={currentCampus?.id} />} />
               <Route path="partners" element={<PartnersPanel branchId={currentCampus?.id} />} />
               <Route path="business" element={<BusinessManagement branchId={currentCampus?.id} />} />
+              <Route path="owner-profile/:companyId" element={<OwnerProfile />} />
               <Route path="staff" element={<StaffManagement branchId={currentCampus?.id} />} />
               <Route path="finance" element={<FinancePanel branchId={currentCampus?.id} />} />
               <Route path="expenses" element={<ExpensesPanel branchId={currentCampus?.id} />} />
@@ -136,6 +154,7 @@ const DashboardLayout = () => {
               <Route path="activities" element={<ActivitiesPage branchId={currentCampus?.id} />} />
               <Route path="rooms-status" element={<RoomsStatus branchId={currentCampus?.id} />} />
               <Route path="settings" element={<SettingsPanel branchId={currentCampus?.id} />} />
+              <Route path="support-center" element={<SupportCenter branchId={currentCampus?.id} />} />
               <Route path="*" element={<Navigate to="dashboard" replace />} />
             </Routes>
           </div>
