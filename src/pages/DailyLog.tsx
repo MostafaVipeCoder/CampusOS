@@ -253,6 +253,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
   const [editOrders, setEditOrders] = useState<any[]>([]);
   const [editNotes, setEditNotes] = useState('');
   const [editPaymentMethod, setEditPaymentMethod] = useState('');
+  const [editVfcashWhatsapp, setEditVfcashWhatsapp] = useState(false);
 
   // Helper to format UTC ISO to Cairo Local YYYY-MM-DDTHH:mm
   const toCairoInput = (iso?: string | Date) => {
@@ -438,6 +439,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
           catering_amount: parseFloat(editCatering) || 0,
           total_amount: amount,
           payment_method: newMethod,
+          vfcash_whatsapp_confirmed: newMethod === 'vfcash' ? editVfcashWhatsapp : false,
           orders: editOrders,
           notes: editNotes
         })
@@ -737,6 +739,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                     setEditOrders(s.orders || []);
                     setEditNotes(s.notes || '');
                     setEditPaymentMethod(s.payment_method || 'cash');
+                    setEditVfcashWhatsapp(s.vfcash_whatsapp_confirmed || false);
                   }}
                   onDelete={handleDeleteSession}
                   onPrint={handlePrintReceipt}
@@ -795,6 +798,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                              setEditOrders(session.orders || []);
                              setEditNotes(session.notes || ``);
                              setEditPaymentMethod(session.payment_method || 'cash');
+                             setEditVfcashWhatsapp(session.vfcash_whatsapp_confirmed || false);
                           }}
                           className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl active:scale-90"
                           title="Edit Session"
@@ -977,6 +981,24 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                           </button>
                        ))}
                     </div>
+
+                    {editPaymentMethod === 'vfcash' && (
+                       <div className="mt-6 p-6 bg-rose-50/50 rounded-3xl border-2 border-rose-100 flex items-center justify-between group/whatsapp">
+                          <div className="flex flex-col items-end">
+                             <p className="text-xs font-black text-rose-600">تأكيد سكرين الواتساب</p>
+                             <p className="text-[10px] text-rose-400 font-bold mt-0.5">هل تم استلام صورة التحويل بنجاح؟</p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                             <input 
+                                type="checkbox" 
+                                checked={editVfcashWhatsapp}
+                                onChange={(e) => setEditVfcashWhatsapp(e.target.checked)}
+                                className="sr-only peer"
+                             />
+                             <div className="w-14 h-8 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-emerald-500 shadow-inner"></div>
+                          </label>
+                       </div>
+                    )}
                 </div>
 
                 <div className="space-y-3">
