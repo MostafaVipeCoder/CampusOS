@@ -31,6 +31,7 @@ interface Session {
   };
   user_name?: string;
   partners?: { name: string; };
+  vfcash_whatsapp_confirmed?: boolean;
 }
 
 // Helper Component for Desktop Table Row
