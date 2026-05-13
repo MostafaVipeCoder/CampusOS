@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Clock, Users, ArrowRight, X, Loader2, CheckCircle2, AlertCircle, Calendar, Plus, Edit, Receipt, Printer, Briefcase, DollarSign, Phone, Smartphone } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { RoomsDatabase } from './RoomsDatabase';
+import { calculateSessionPrice } from '../lib/pricing';
 
 interface Room {
   id: string;
@@ -268,8 +269,8 @@ export const RoomsStatus = ({ branchId }: { branchId?: string }) => {
     if (diffMins === 0) diffMins = 1;
     
     // Use the session's hourly price if available, otherwise the room's base price
-    const currentHourlyPrice = session.hourly_price || room.base_price;
-    const initialAmount = Math.ceil((diffMins/60) * currentHourlyPrice);
+    const currentHourlyPrice = session.hourly_price || room.base_price || 0;
+    const initialAmount = calculateSessionPrice(diffMins, currentHourlyPrice);
     const hours = parseFloat((diffMins / 60).toFixed(2));
     
     setTempOrders([]);

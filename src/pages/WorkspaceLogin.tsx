@@ -10,6 +10,7 @@ import { SessionDashboard } from '../components/workspace/SessionDashboard';
 import { LandingForms } from '../components/workspace/LandingForms';
 import { WorkspaceMainUI } from '../components/workspace/WorkspaceMainUI';
 import { RegistrationSuccessModal } from '../components/workspace/RegistrationSuccessModal';
+import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 
 // UI tabs options
 type activeTabType = 'session' | 'catering' | 'profile' | 'about' | 'how_work';
@@ -98,7 +99,9 @@ export const WorkspaceLogin = () => {
     }
 
     const fetchBranches = async () => {
-        const { data } = await supabase.from('branches').select('id, name').eq('is_active', true);
+      try {
+        const { data, error } = await supabase.from('branches').select('id, name').eq('is_active', true);
+        if (error) throw error;
         if (data && data.length > 0) {
             setBranches(data);
             // Default to "Cloud" branch or the first one if not set
@@ -108,6 +111,9 @@ export const WorkspaceLogin = () => {
                 localStorage.setItem('workspace_branch_id', mainBranch.id);
             }
         }
+      } catch (err) {
+        console.error('Error fetching branches:', err);
+      }
     };
     fetchBranches();
     fetchStoreItems();
@@ -174,6 +180,136 @@ export const WorkspaceLogin = () => {
         }
         return newCart;
     });
+  };
+
+  const handleRequestCashback = async (amount: number) => {
+    if (!session || !profileData) return;
+    if (amount > (profileData.cashback_balance || 0)) {
+        alert("المبلغ المطلوب أكبر من رصيدك المتاح.");
+        return;
+    }
+    
+    setLoading(true);
+    try {
+        let baseNotes = session.notes || '';
+        // Remove previous user request if exists
+        baseNotes = baseNotes.replace(/\|USER_REQUESTED_CASHBACK:\d+\|/g, '').trim();
+        const newNotes = `${baseNotes} |USER_REQUESTED_CASHBACK:${amount}|`.trim();
+        
+        const { error } = await supabase
+            .from('workspace_sessions')
+            .update({ notes: newNotes })
+            .eq('id', session.id);
+            
+        if (error) throw error;
+        setSession({ ...session, notes: newNotes });
+        alert(`تم طلب خصم ${amount} ج.م من الكاش باك بنجاح. سيتم تطبيق الخصم عند الدفع.`);
+    } catch (err: any) {
+        alert("فشل طلب الخصم: " + err.message);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleCheckoutWithCashback = async () => {
+    if (Object.keys(cart).length === 0 || !profileData) return;
+    if (session?.status === 'checkout_requested') {
+      alert("لا يمكن إضافة طلبات بعد طلب إنهاء الجلسة، يرجى إلغاء الطلب أولاً أو مراجعة المسئول");
+      return;
+    }
+
+    const cartEntries = Object.values(cart) as any[];
+    const subtotal = cartEntries.reduce((sum, entry) => sum + ((Number(entry.item.selling_price) || Number(entry.item.price) || 0) * (Number(entry.quantity) || 1)), 0);
+
+    if ((profileData.cashback_balance || 0) < subtotal) {
+      alert("رصيد الكاش باك غير كافٍ لإتمام هذه العملية.");
+      return;
+    }
+
+    if (!confirm(`هل أنت متأكد من خصم ${subtotal} ج.م من رصيد الكاش باك الخاص بك؟`)) return;
+
+    setOrderLoading(true);
+    try {
+      // 1. Deduct from customer cashback_balance
+      const newBalance = Number((profileData.cashback_balance - subtotal).toFixed(2));
+      const { error: custErr } = await supabase
+        .from('customers')
+        .update({ cashback_balance: newBalance })
+        .eq('id', profileData.id);
+      
+      if (custErr) throw custErr;
+
+      // 2. Structured order records (same as handleCheckoutCart)
+      try {
+          const { data: order, error: orderErr } = await (supabase as any)
+            .from('orders')
+            .insert({
+                customer_id: session.customer_id,
+                session_id: session.id,
+                total_price: subtotal,
+                branch_id: branchId,
+                payment_method: 'cashback'
+            })
+            .select()
+            .single();
+            
+          if (!orderErr && order) {
+              for (const entry of cartEntries) {
+                  await (supabase as any)
+                    .from('order_items')
+                    .insert({
+                        order_id: order.id,
+                        product_id: entry.item.id,
+                        quantity: entry.quantity,
+                        price_at_purchase: Number(entry.item.selling_price) || Number(entry.item.price) || 0
+                    });
+              }
+          }
+      } catch (tableErr) {
+          console.warn("Structured order tables not found.");
+      }
+
+      // 3. Deduct Inventory
+      for (const entry of cartEntries) {
+          const invId = entry.item.id;
+          const currentStock = Number(entry.item.stock) || 0;
+          await (supabase as any)
+            .from('inventory')
+            .update({ stock: Math.max(0, currentStock - (Number(entry.quantity) || 1)) })
+            .eq('id', invId);
+      }
+
+      // 4. Update Session JSON
+      const currentOrders = Array.isArray(session.orders) ? session.orders : [];
+      const newOrders = [...currentOrders, ...cartEntries.map(e => ({
+        id: e.item.id,
+        name: e.item.name,
+        image_url: e.item.image_url,
+        price: 0, // Set to 0 so it doesn't affect the bill
+        original_price: Number(e.item.selling_price) || Number(e.item.price) || 0,
+        quantity: e.quantity,
+        time: new Date().toISOString(),
+        paid_cashback: true
+      }))];
+      
+      // We DON'T increment catering_amount because it's already paid via cashback
+      const { error: sessionErr } = await (supabase as any)
+        .from('workspace_sessions')
+        .update({ orders: newOrders })
+        .eq('id', session.id);
+        
+      if (sessionErr) throw sessionErr;
+
+      setSession({...session, orders: newOrders});
+      setCart({});
+      setProfileData({ ...profileData, cashback_balance: newBalance });
+      alert("تم الدفع بنجاح باستخدام رصيد الكاش باك! ✨");
+    } catch (err: any) {
+      console.error(err);
+      alert("حدث خطأ أثناء إتمام الطلب: " + err.message);
+    } finally {
+      setOrderLoading(false);
+    }
   };
 
   const handleCheckoutCart = async () => {
@@ -1098,43 +1234,47 @@ export const WorkspaceLogin = () => {
     }
 
     return (
-      <WorkspaceMainUI
-        session={session}
-        userCompany={userCompany}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        elapsedTime={elapsedTime}
-        cateringItems={cateringItems}
-        cart={cart}
-        storeSearch={storeSearch}
-        setStoreSearch={setStoreSearch}
-        storeCategory={storeCategory}
-        setStoreCategory={setStoreCategory}
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        addToCart={addToCart}
-        removeFromCart={removeFromCart}
-        handleCheckoutCart={handleCheckoutCart}
-        orderLoading={orderLoading}
-        profileData={profileData}
-        totalMinutes={totalMinutes}
-        isUserLeader={isUserLeader}
-        userCompanyMembers={userCompanyMembers}
-        companyContract={companyContract}
-        activeSub={activeSub}
-        isConverting={isConverting}
-        convertPointsToCashback={convertPointsToCashback}
-        checkCompanyMembership={checkCompanyMembership}
-        setLeaderData={setLeaderData}
-        ptsPerHour={ptsPerHour}
-        cbRatio={cbRatio}
-        showCheckoutConfirm={showCheckoutConfirm}
-        setShowCheckoutConfirm={setShowCheckoutConfirm}
-        handleRequestPause={handleRequestPause}
-        handleResumeSession={handleResumeSession}
-        handleCheckoutRequest={handleCheckoutRequest}
-        fetchStoreItems={fetchStoreItems}
-      />
+      <ErrorBoundary>
+        <WorkspaceMainUI
+          session={session}
+          userCompany={userCompany}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          elapsedTime={elapsedTime}
+          cateringItems={cateringItems}
+          cart={cart}
+          storeSearch={storeSearch}
+          setStoreSearch={setStoreSearch}
+          storeCategory={storeCategory}
+          setStoreCategory={setStoreCategory}
+          viewMode={viewMode}
+          setViewMode={setViewMode}
+          addToCart={addToCart}
+          removeFromCart={removeFromCart}
+          handleCheckoutCart={handleCheckoutCart}
+          handleCheckoutWithCashback={handleCheckoutWithCashback}
+          orderLoading={orderLoading}
+          profileData={profileData}
+          totalMinutes={totalMinutes}
+          isUserLeader={isUserLeader}
+          userCompanyMembers={userCompanyMembers}
+          companyContract={companyContract}
+          activeSub={activeSub}
+          isConverting={isConverting}
+          convertPointsToCashback={convertPointsToCashback}
+          checkCompanyMembership={checkCompanyMembership}
+          setLeaderData={setLeaderData}
+          ptsPerHour={ptsPerHour}
+          cbRatio={cbRatio}
+          showCheckoutConfirm={showCheckoutConfirm}
+          setShowCheckoutConfirm={setShowCheckoutConfirm}
+          handleRequestPause={handleRequestPause}
+          handleResumeSession={handleResumeSession}
+          handleCheckoutRequest={handleCheckoutRequest}
+          handleRequestCashback={handleRequestCashback}
+          fetchStoreItems={fetchStoreItems}
+        />
+      </ErrorBoundary>
     );
   }
 

@@ -5,14 +5,14 @@ import {
   ArrowUpRight, DollarSign, Calendar, ChevronRight,
   ChevronLeft, Plus, Save, Calculator, CheckCircle2,
   AlertCircle, Receipt, Printer, X, Wallet, ArrowRightLeft,
-  ChevronUp, ChevronDown, Lock, Edit, Trash2, Phone, Smartphone, Users2
+  ChevronUp, ChevronDown, Lock, Edit, Trash2, Phone, Smartphone, Users2, Briefcase
 } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input, Modal } from '../components/ui';
 import { supabase } from '../lib/supabase';
 
 export const FinancePanel = ({ branchId }: { branchId?: string }) => {
-  const [activeTab, setActiveTab] = useState<'daily' | 'monthly' | 'annual' | 'digital'>('daily');
+  const [activeTab, setActiveTab] = useState<'daily' | 'monthly' | 'annual' | 'digital' | 'analytics'>('daily');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewDate, setViewDate] = useState(new Date());
   const [dailyData, setDailyData] = useState({
@@ -63,6 +63,29 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
   const [editingDailyLog, setEditingDailyLog] = useState<any | null>(null);
   const [editDailyIncome, setEditDailyIncome] = useState('');
   const [editDailyExpense, setEditDailyExpense] = useState('');
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<'day' | 'month' | 'year'>('month');
+  const [analyticsData, setAnalyticsData] = useState<{
+    totalRevenue: number;
+    totalExpenses: number;
+    netProfit: number;
+    revenueByCategory: { [key: string]: number };
+    roomUsage: { name: string; count: number; revenue: number }[];
+    paymentMethods: { [key: string]: number };
+    dailyPerformance: { date: string; revenue: number; expenses: number }[];
+    sessions: any[];
+  }>({
+    totalRevenue: 0,
+    totalExpenses: 0,
+    netProfit: 0,
+    revenueByCategory: {},
+    roomUsage: [],
+    paymentMethods: {},
+    dailyPerformance: [],
+    sessions: []
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchReport, setSearchReport] = useState<any[] | null>(null);
+  const [editingPaymentSession, setEditingPaymentSession] = useState<any | null>(null);
 
 
 
@@ -150,7 +173,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         
       return () => { supabase.removeChannel(channel); };
     }
-  }, [branchId, currentDate, activeTab, viewDate]);
+  }, [branchId, currentDate, activeTab, viewDate, analyticsPeriod]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -159,9 +182,254 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
       fetchPettyTransactions(),
       fetchClosedMonths(),
       fetchFinanceSummary(),
-      fetchMonthlyClosingsHistory()
+      fetchMonthlyClosingsHistory(),
+      fetchAnalyticsData()
     ]);
     setLoading(false);
+  };
+
+  const fetchAnalyticsData = async () => {
+    if (!branchId) return;
+    setLoading(true);
+    
+    let start, end;
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth() + 1;
+    
+    if (analyticsPeriod === 'day') {
+      const dateStr = viewDate.toLocaleDateString('en-CA');
+      start = `${dateStr}T00:00:00`;
+      end = `${dateStr}T23:59:59`;
+    } else if (analyticsPeriod === 'month') {
+      const lastDay = new Date(year, month, 0).getDate();
+      start = `${year}-${month.toString().padStart(2, '0')}-01T00:00:00`;
+      end = `${year}-${month.toString().padStart(2, '0')}-${lastDay}T23:59:59`;
+    } else {
+      start = `${year}-01-01T00:00:00`;
+      end = `${year}-12-31T23:59:59`;
+    }
+
+    try {
+      const [
+        { data: sessions },
+        { data: subs },
+        { data: expenses },
+        { data: services }
+      ] = await Promise.all([
+        (supabase as any).from('workspace_sessions').select('*, services(name_ar)').eq('branch_id', branchId).eq('status', 'completed').gte('end_time', start).lte('end_time', end),
+        (supabase as any).from('subscriptions').select('*').eq('branch_id', branchId).gte('created_at', start).lte('created_at', end),
+        (supabase as any).from('expenses').select('*').eq('branch_id', branchId).gte('date', start.split('T')[0]).lte('date', end.split('T')[0]),
+        (supabase as any).from('services').select('id, name_ar').eq('branch_id', branchId)
+      ]);
+
+      // Process Revenue
+      let totalRevenue = 0;
+      const revenueByCategory: { [key: string]: number } = {
+        'Catering': 0,
+        'Workspace': 0,
+        'Rooms': 0,
+        'Subscriptions': 0,
+        'Corporate': 0
+      };
+      const paymentMethods: { [key: string]: number } = {};
+      const roomUsageMap: { [key: string]: { count: number; revenue: number; name: string } } = {};
+
+      sessions?.forEach(s => {
+        const total = Number(s.total_amount) || 0;
+        const catering = Number(s.catering_amount) || 0;
+        const workspace = Math.max(0, total - catering);
+        
+        totalRevenue += total;
+        revenueByCategory['Catering'] += catering;
+        
+        if (s.service_id) {
+          revenueByCategory['Rooms'] += workspace;
+        } else {
+          revenueByCategory['Workspace'] += workspace;
+        }
+        
+        if (s.payment_method === 'corporate') {
+          revenueByCategory['Corporate'] += total;
+        }
+
+        const method = s.payment_method || 'cash';
+        paymentMethods[method] = (paymentMethods[method] || 0) + total;
+
+        if (s.service_id) {
+          if (!roomUsageMap[s.service_id]) {
+            const serviceName = s.services?.name_ar || services?.find((sv: any) => sv.id === s.service_id)?.name_ar || 'Unknown Room';
+            roomUsageMap[s.service_id] = { count: 0, revenue: 0, name: serviceName };
+          }
+          roomUsageMap[s.service_id].count += 1;
+          roomUsageMap[s.service_id].revenue += total;
+        }
+      });
+
+      subs?.forEach(sb => {
+        const paid = Number(sb.paid) || 0;
+        totalRevenue += paid;
+        revenueByCategory['Subscriptions'] += paid;
+        paymentMethods['cash'] = (paymentMethods['cash'] || 0) + paid;
+      });
+
+      const totalExpenses = expenses?.reduce((acc: number, e: any) => acc + (Number(e.amount) || 0), 0) || 0;
+
+      // Daily Performance
+      const performanceMap: { [key: string]: { revenue: number; expenses: number } } = {};
+      sessions?.forEach(s => {
+        const d = new Date(s.end_time).toISOString().split('T')[0];
+        if (!performanceMap[d]) performanceMap[d] = { revenue: 0, expenses: 0 };
+        performanceMap[d].revenue += Number(s.total_amount) || 0;
+      });
+      subs?.forEach(sb => {
+        const d = new Date(sb.created_at).toISOString().split('T')[0];
+        if (!performanceMap[d]) performanceMap[d] = { revenue: 0, expenses: 0 };
+        performanceMap[d].revenue += Number(sb.paid) || 0;
+      });
+      expenses?.forEach(e => {
+        const d = e.date;
+        if (!performanceMap[d]) performanceMap[d] = { revenue: 0, expenses: 0 };
+        performanceMap[d].expenses += Number(e.amount) || 0;
+      });
+
+      setAnalyticsData({
+        totalRevenue,
+        totalExpenses,
+        netProfit: totalRevenue - totalExpenses,
+        revenueByCategory,
+        roomUsage: Object.values(roomUsageMap).sort((a, b) => b.revenue - a.revenue),
+        paymentMethods,
+        dailyPerformance: Object.keys(performanceMap).sort().map(date => ({
+          date,
+          revenue: performanceMap[date].revenue,
+          expenses: performanceMap[date].expenses
+        })),
+        sessions: sessions || []
+      });
+
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePrevPeriod = () => {
+    const newDate = new Date(viewDate);
+    if (analyticsPeriod === 'day') {
+      newDate.setDate(newDate.getDate() - 1);
+    } else if (analyticsPeriod === 'month') {
+      newDate.setMonth(newDate.getMonth() - 1);
+    } else {
+      newDate.setFullYear(newDate.getFullYear() - 1);
+    }
+    setViewDate(newDate);
+  };
+
+  const handleNextPeriod = () => {
+    const newDate = new Date(viewDate);
+    if (analyticsPeriod === 'day') {
+      newDate.setDate(newDate.getDate() + 1);
+    } else if (analyticsPeriod === 'month') {
+      newDate.setMonth(newDate.getMonth() + 1);
+    } else {
+      newDate.setFullYear(newDate.getFullYear() + 1);
+    }
+    setViewDate(newDate);
+  };
+
+  const fetchSearchReport = async () => {
+    if (!searchQuery || !branchId) return;
+    setLoading(true);
+    try {
+      const { data: sessions } = await (supabase as any)
+        .from('workspace_sessions')
+        .select('*, services(name_ar)')
+        .eq('branch_id', branchId)
+        .or(`user_code.ilike.%${searchQuery}%,user_name.ilike.%${searchQuery}%`)
+        .order('start_time', { ascending: false });
+      
+      setSearchReport(sessions || []);
+    } catch (err) {
+      console.error(searchQuery, err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdatePaymentMethod = async (sessionId: string, newMethod: string) => {
+    try {
+      // 1. Fetch current session data to calculate differences
+      const { data: session, error: fetchErr } = await (supabase as any)
+        .from('workspace_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single();
+      
+      if (fetchErr) throw fetchErr;
+      const oldMethod = session.payment_method || 'cash';
+      const amount = Number(session.total_amount) || 0;
+      const dateStr = new Date(session.end_time).toLocaleDateString('en-CA');
+
+      // 2. Prepare session updates
+      const updates: any = { payment_method: newMethod };
+      if (newMethod === 'cash') {
+        updates.vfcash_admin_id = null;
+        updates.vfcash_payment_time = null;
+        updates.vfcash_whatsapp_confirmed = false;
+      } else if (newMethod === 'vfcash' || newMethod === 'instapay') {
+        updates.vfcash_payment_time = new Date().toISOString();
+      }
+
+      // 3. Update the session itself
+      const { error: updateErr } = await (supabase as any)
+        .from('workspace_sessions')
+        .update(updates)
+        .eq('id', sessionId);
+      
+      if (updateErr) throw updateErr;
+
+      // 4. Update the Daily History (daily_closings) if it exists
+      if (oldMethod !== newMethod) {
+        const { data: closing } = await (supabase as any)
+          .from('daily_closings')
+          .select('*')
+          .eq('branch_id', branchId)
+          .eq('date', dateStr)
+          .single();
+
+        if (closing) {
+          let newExpectedCash = Number(closing.expected_cash) || 0;
+          let newVfCash = Number(closing.vfcash_total) || 0;
+          let newInstaPay = Number(closing.instapay_total) || 0;
+
+          // Deduct from old method
+          if (oldMethod === 'cash') newExpectedCash -= amount;
+          else if (oldMethod === 'vfcash') newVfCash -= amount;
+          else if (oldMethod === 'instapay') newInstaPay -= amount;
+
+          // Add to new method
+          if (newMethod === 'cash') newExpectedCash += amount;
+          else if (newMethod === 'vfcash') newVfCash += amount;
+          else if (newMethod === 'instapay') newInstaPay += amount;
+
+          await (supabase as any)
+            .from('daily_closings')
+            .update({
+              expected_cash: newExpectedCash,
+              vfcash_total: newVfCash,
+              instapay_total: newInstaPay,
+              difference: Number(closing.actual_cash) - newExpectedCash
+            })
+            .eq('id', closing.id);
+        }
+      }
+
+      showNotification('تم تحديث وسيلة الدفع وتعديل السجل المالي بنجاح');
+      setEditingPaymentSession(null);
+      fetchData(); 
+      if (activeTab === 'analytics' && searchReport) fetchSearchReport();
+    } catch (err: any) {
+      alert('خطأ في التحديث: ' + err.message);
+    }
   };
 
   const fetchFinanceSummary = async () => {
@@ -309,7 +577,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
       // 1. Fetch Workspace Sessions Income
       const { data: sessions } = await (supabase as any)
         .from('workspace_sessions')
-        .select('total_amount, catering_amount, payment_method, vfcash_admin_id, vfcash_payment_time, vfcash_whatsapp_confirmed, user_name, user_code, id, end_time, profiles:vfcash_admin_id(full_name)')
+        .select('total_amount, catering_amount, payment_method, service_id, vfcash_admin_id, vfcash_payment_time, vfcash_whatsapp_confirmed, user_name, user_code, id, end_time, profiles:vfcash_admin_id(full_name)')
         .eq('branch_id', branchId)
         .eq('status', 'completed')
         .gte('end_time', `${dateStr}T00:00:00`)
@@ -338,13 +606,14 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         .eq('type', 'add')
         .gte('created_at', `${dateStr}T00:00:00`);
 
-      let workspaceCash = 0, cateringCash = 0, corporateUsage = 0, vfcashIncome = 0, instapayIncome = 0;
+      let workspaceCash = 0, roomsCash = 0, cateringCash = 0, corporateUsage = 0, vfcashIncome = 0, instapayIncome = 0;
       const vfcashPayments: any[] = [];
       
       sessions?.forEach(s => {
         if (s.payment_method === 'owner') return;
         const cat = Number(s.catering_amount) || 0;
         const total = Number(s.total_amount) || 0;
+        const serviceAmount = Math.max(0, total - cat);
         
         if (s.payment_method === 'corporate') {
            corporateUsage += total;
@@ -356,14 +625,18 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
            vfcashPayments.push(s);
         } else {
            cateringCash += cat;
-           workspaceCash += Math.max(0, total - cat);
+           if (s.service_id) {
+             roomsCash += serviceAmount;
+           } else {
+             workspaceCash += serviceAmount;
+           }
         }
       });
 
       const subIncome = subs?.reduce((s, b) => s + (Number(b.paid) || 0), 0) || 0;
       
       // ONLY include actual cash payments in totalIncome
-      const totalIncome = workspaceCash + cateringCash + subIncome;
+      const totalIncome = workspaceCash + roomsCash + cateringCash + subIncome;
       const totalExpense = expenses?.reduce((s, e) => s + (Number(e.amount) || 0), 0) || 0;
 
       setDailyData({
@@ -371,7 +644,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         expense: totalExpense,
         details: { 
            catering: cateringCash, 
-           rooms: 0, 
+           rooms: roomsCash, 
            workspace: workspaceCash, 
            vfcash: vfcashIncome,
            instapay: instapayIncome,
@@ -425,7 +698,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
       // 1. Fetch Monthly Workspace Sessions
       const { data: sessions } = await (supabase as any)
         .from('workspace_sessions')
-        .select('total_amount, catering_amount, payment_method')
+        .select('total_amount, catering_amount, payment_method, service_id')
         .eq('branch_id', branchId)
         .eq('status', 'completed')
         .gte('end_time', `${firstDay}T00:00:00`)
@@ -447,20 +720,26 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         .gte('date', firstDay)
         .lte('date', lastDay);
 
-      let workspaceCash = 0, cateringCash = 0, corporateUsage = 0;
+      let workspaceCash = 0, roomsCash = 0, cateringCash = 0, corporateUsage = 0;
       sessions?.forEach(s => {
         const cat = s.catering_amount || 0;
         const total = s.total_amount || 0;
+        const serviceAmount = Math.max(0, total - cat);
+
         if (s.payment_method === 'corporate') {
            corporateUsage += total;
         } else {
            cateringCash += cat;
-           workspaceCash += Math.max(0, total - cat);
+           if (s.service_id) {
+             roomsCash += serviceAmount;
+           } else {
+             workspaceCash += serviceAmount;
+           }
         }
       });
 
       const subIncome = subs?.reduce((s: number, b: any) => s + (b.paid || 0), 0) || 0;
-      const totalIncome = workspaceCash + cateringCash + subIncome;
+      const totalIncome = workspaceCash + roomsCash + cateringCash + subIncome;
       const totalExpense = expenses?.reduce((s: number, e: any) => s + (e.amount || 0), 0) || 0;
 
       setDailyData({
@@ -468,7 +747,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         expense: totalExpense,
         details: { 
            catering: cateringCash, 
-           rooms: 0, 
+           rooms: roomsCash, 
            workspace: workspaceCash,
            subscriptions: subIncome,
            corporate: corporateUsage,
@@ -835,6 +1114,7 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
             {[
               { label: 'مبيعات الاشتراكات', amount: dailyData.details.subscriptions, color: 'bg-indigo-500' },
               { label: 'حجوزات المساحة (كاش)', amount: dailyData.details.workspace, color: 'bg-emerald-500' },
+              { label: 'حجوزات القاعات (كاش)', amount: dailyData.details.rooms, color: 'bg-violet-500' },
               { label: 'مبيعات الكاترينج (كاش)', amount: dailyData.details.catering, color: 'bg-amber-500' },
               { label: 'فودافون كاش', amount: dailyData.details.vfcash, color: 'bg-rose-500' },
               { label: 'إنستا باي', amount: dailyData.details.instapay, color: 'bg-blue-500' },
@@ -1042,28 +1322,40 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
                   <div className={`px-6 py-3 rounded-2xl text-[13px] font-black shadow-sm ${(day.difference || 0) === 0 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
                     {day.difference === 0 ? '✓ مطابق' : `⚠ فرق: ${day.difference?.toLocaleString()}`}
                   </div>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => {
-                        setEditingDailyLog(day);
-                        setEditDailyIncome(day.total_income?.toString() || '0');
-                        setEditDailyExpense(day.total_expense?.toString() || '0');
-                      }}
-                      className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
-                    >
-                      <Edit size={18} />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => handleDeleteDailyLog(day.id)}
-                      className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
-                    >
-                      <Trash2 size={18} />
-                    </Button>
-                  </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => {
+                          setViewDate(new Date(day.date));
+                          setAnalyticsPeriod('day');
+                          setActiveTab('analytics');
+                        }}
+                        className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all flex items-center gap-2"
+                      >
+                         <BarChart3 size={18} /> عرض التفاصيل
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => {
+                          setEditingDailyLog(day);
+                          setEditDailyIncome(day.total_income?.toString() || '0');
+                          setEditDailyExpense(day.total_expense?.toString() || '0');
+                        }}
+                        className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                      >
+                        <Edit size={18} />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => handleDeleteDailyLog(day.id)}
+                        className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                      >
+                        <Trash2 size={18} />
+                      </Button>
+                    </div>
                 </div>
               </div>
             ))}
@@ -1100,6 +1392,568 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
             <h4 className="text-4xl font-black">{(totalYearIncome - totalYearExpense).toLocaleString()} <span className="text-sm font-bold">ج.م</span></h4>
           </div>
         </div>
+      </div>
+    );
+  };
+
+  const renderAnalytics = () => {
+    return (
+      <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        {/* Period Selector */}
+        <div className="flex justify-center mb-8">
+          <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner border border-slate-200">
+            {[
+              { id: 'day', label: 'تحليل اليوم' },
+              { id: 'month', label: 'تحليل الشهر' },
+              { id: 'year', label: 'تحليل السنة' },
+            ].map(p => (
+              <button
+                key={p.id}
+                onClick={() => setAnalyticsPeriod(p.id as any)}
+                className={`px-10 py-3 rounded-xl text-sm font-black transition-all ${analyticsPeriod === p.id ? 'bg-white text-indigo-600 shadow-xl scale-105' : 'text-slate-500 hover:text-indigo-600'}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Date Navigation */}
+        <div className="flex items-center justify-center gap-4 md:gap-8 mb-8">
+          <Button 
+            variant="ghost" 
+            onClick={handleNextPeriod} 
+            className="w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-white shadow-xl border border-slate-100 text-indigo-600 hover:bg-indigo-50 hover:scale-110 transition-all flex items-center justify-center"
+          >
+            <ChevronLeft size={32} />
+          </Button>
+          
+          <div className="text-center px-6 md:px-12 py-4 md:py-6 bg-white rounded-[2.5rem] shadow-2xl border border-slate-50 min-w-[200px] md:min-w-[400px] relative overflow-hidden group">
+             <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-full -mr-12 -mt-12 blur-2xl group-hover:bg-indigo-100 transition-colors" />
+             <p className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest mb-1 relative z-10">الفترة التحليلية الحالية</p>
+             <h3 className="text-xl md:text-3xl font-black text-slate-800 relative z-10">
+               {analyticsPeriod === 'day' ? viewDate.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) :
+                analyticsPeriod === 'month' ? viewDate.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) :
+                `عام ${viewDate.getFullYear()}`}
+             </h3>
+          </div>
+
+          <Button 
+            variant="ghost" 
+            onClick={handlePrevPeriod} 
+            className="w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-white shadow-xl border border-slate-100 text-indigo-600 hover:bg-indigo-50 hover:scale-110 transition-all flex items-center justify-center"
+          >
+            <ChevronRight size={32} />
+          </Button>
+        </div>
+
+
+        {/* User / Company Specific Search */}
+        <Card className="border-none shadow-2xl shadow-slate-200/50 rounded-[3rem] bg-slate-900 text-white overflow-hidden">
+          <CardContent className="p-10">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+              <div className="max-w-md">
+                <h3 className="text-2xl font-black mb-2">استعلام مالي مخصص</h3>
+                <p className="text-slate-400 text-sm font-bold">ابحث عن كود مستخدم أو اسم شركة لمعرفة تاريخ تعاملاته المالية والمبالغ المستحقة.</p>
+              </div>
+              <div className="flex-1 w-full flex gap-3">
+                <Input 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="أدخل كود العميل أو اسم الشركة..."
+                  className="h-16 bg-white/10 border-white/10 text-white rounded-2xl font-bold placeholder:text-slate-500 focus:ring-indigo-500"
+                />
+                <Button onClick={fetchSearchReport} className="h-16 px-10 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black text-lg">بحث</Button>
+              </div>
+            </div>
+
+            {searchReport && (
+              <div className="mt-12 animate-in slide-in-from-top-4 duration-500">
+                <div className="overflow-x-auto rounded-3xl border border-white/10 bg-white/5">
+                  <table className="w-full text-right">
+                    <thead className="bg-white/10 text-[10px] font-black text-indigo-300 uppercase tracking-widest">
+                      <tr>
+                        <th className="px-8 py-5">التاريخ</th>
+                        <th className="px-8 py-5">العميل / الكود</th>
+                        <th className="px-8 py-5">الخدمة</th>
+                        <th className="px-8 py-5">المبلغ</th>
+                        <th className="px-8 py-5">وسيلة الدفع</th>
+                        <th className="px-8 py-5">الحالة</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {searchReport.length === 0 ? (
+                        <tr><td colSpan={6} className="px-8 py-10 text-center text-slate-500">لا يوجد سجلات مطابقة لهذا البحث</td></tr>
+                      ) : (
+                        searchReport.map((row, i) => (
+                          <tr key={i} className="hover:bg-white/5 transition-colors">
+                            <td className="px-8 py-5 text-sm font-bold opacity-60">{new Date(row.start_time).toLocaleDateString('ar-EG')}</td>
+                            <td className="px-8 py-5">
+                               <p className="font-black text-white">{row.user_name || 'N/A'}</p>
+                               <p className="text-[10px] font-black text-indigo-400">{row.user_code}</p>
+                            </td>
+                            <td className="px-8 py-5 text-sm font-bold">{row.services?.name_ar || 'مساحة عمل'}</td>
+                            <td className="px-8 py-5 font-black text-indigo-300">{row.total_amount?.toLocaleString()} ج.م</td>
+                            <td className="px-8 py-5">
+                               <div className="flex items-center gap-2">
+                                 <span className="px-3 py-1 bg-white/10 rounded-lg text-[10px] font-black uppercase">{row.payment_method}</span>
+                                 <button onClick={() => setEditingPaymentSession(row)} className="p-1.5 hover:bg-white/10 rounded-lg text-indigo-400 transition-all">
+                                   <Edit size={12} />
+                                 </button>
+                               </div>
+                            </td>
+                            <td className="px-8 py-5">
+                               <span className={`px-3 py-1 rounded-full text-[10px] font-black ${row.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                 {row.status === 'completed' ? 'تم الدفع' : 'قيد الانتظار'}
+                               </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-8 flex justify-between items-center p-6 bg-indigo-600/20 rounded-3xl border border-indigo-500/30">
+                   <div>
+                      <p className="text-xs font-black text-indigo-300 uppercase mb-1">إجمالي تعاملات العميل</p>
+                      <h4 className="text-3xl font-black">{searchReport.reduce((acc, r) => acc + (Number(r.total_amount) || 0), 0).toLocaleString()} <span className="text-sm">ج.م</span></h4>
+                   </div>
+                   <Button variant="ghost" onClick={() => setSearchReport(null)} className="text-white hover:bg-white/10 font-bold">إغلاق التقرير</Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Overview Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <Card className="border-none shadow-2xl shadow-slate-200/50 bg-gradient-to-br from-indigo-600 to-violet-700 text-white rounded-[3rem] overflow-hidden relative group">
+            <div className="absolute -right-8 -top-8 w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-700" />
+            <CardContent className="p-10">
+              <div className="flex items-center gap-3 mb-4 opacity-80">
+                <TrendingUp size={20} />
+                <p className="text-xs font-black uppercase tracking-widest">إجمالي الإيرادات</p>
+              </div>
+              <h3 className="text-5xl font-black mb-2 tracking-tighter">{analyticsData.totalRevenue.toLocaleString()} <span className="text-xl font-bold opacity-60">ج.م</span></h3>
+              <p className="text-xs font-bold text-indigo-100">إجمالي كافة مصادر الدخل للفترة المحددة</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="border-none shadow-2xl shadow-slate-200/50 bg-white border border-slate-100 rounded-[3rem] overflow-hidden relative group">
+             <CardContent className="p-10">
+              <div className="flex items-center gap-3 mb-4 text-rose-500">
+                <TrendingDown size={20} />
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">إجمالي المصروفات</p>
+              </div>
+              <h3 className="text-5xl font-black mb-2 tracking-tighter text-slate-900">{analyticsData.totalExpenses.toLocaleString()} <span className="text-xl font-bold text-slate-300">ج.م</span></h3>
+              <div className="flex items-center gap-2">
+                <div className="h-1.5 flex-1 bg-slate-100 rounded-full overflow-hidden">
+                   <div className="h-full bg-rose-500 rounded-full" style={{ width: `${(analyticsData.totalExpenses / (analyticsData.totalRevenue || 1)) * 100}%` }} />
+                </div>
+                <span className="text-[10px] font-black text-slate-400">{((analyticsData.totalExpenses / (analyticsData.totalRevenue || 1)) * 100).toFixed(0)}% من الدخل</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-none shadow-2xl shadow-indigo-100/50 bg-slate-900 text-white rounded-[3rem] overflow-hidden relative group">
+             <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+             <CardContent className="p-10 relative z-10">
+              <div className="flex items-center gap-3 mb-4 text-emerald-400">
+                <Wallet size={20} />
+                <p className="text-xs font-black uppercase tracking-widest opacity-60">صافي الأرباح</p>
+              </div>
+              <h3 className="text-5xl font-black mb-2 tracking-tighter">{analyticsData.netProfit.toLocaleString()} <span className="text-xl font-bold opacity-40">ج.م</span></h3>
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-black border border-emerald-500/30">
+                <ArrowUpRight size={14} /> {((analyticsData.netProfit / (analyticsData.totalRevenue || 1)) * 100).toFixed(1)}% نسبة الربحية
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          {/* Revenue Breakdown */}
+          <Card className="border-none shadow-2xl shadow-slate-100 rounded-[3rem] bg-white border border-slate-50">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="font-black text-2xl flex items-center gap-3">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl"><PieChart size={24} /></div>
+                  تحليل مصادر الدخل
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-8 pt-6">
+              {[
+                { label: 'حجوزات المساحة العامة', key: 'Workspace', color: 'bg-indigo-600' },
+                { label: 'حجوزات القاعات والخدمات', key: 'Rooms', color: 'bg-violet-500' },
+                { label: 'مبيعات الكاترينج والبوفيه', key: 'Catering', color: 'bg-emerald-500' },
+                { label: 'اشتراكات الأعضاء الجديدة', key: 'Subscriptions', color: 'bg-amber-500' },
+                { label: 'حسابات الشركات والتعاقدات', key: 'Corporate', color: 'bg-rose-500' },
+              ].map((cat) => {
+                const amount = analyticsData.revenueByCategory[cat.key] || 0;
+                const percent = (amount / (analyticsData.totalRevenue || 1)) * 100;
+                return (
+                  <div key={cat.key} className="space-y-3">
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <span className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1">{cat.label}</span>
+                        <span className="text-xl font-black text-slate-900">{amount.toLocaleString()} <span className="text-xs text-slate-400">ج.م</span></span>
+                      </div>
+                      <span className="text-sm font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">{percent.toFixed(1)}%</span>
+                    </div>
+                    <div className="h-4 w-full bg-slate-50 rounded-2xl overflow-hidden border border-slate-100">
+                      <div className={`h-full ${cat.color} rounded-2xl transition-all duration-1000 shadow-sm`} style={{ width: `${percent}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+
+          {/* Room Utilization */}
+          <Card className="border-none shadow-2xl shadow-slate-100 rounded-[3rem] overflow-hidden bg-white border border-slate-50">
+            <CardHeader className="bg-slate-50/50 border-b border-slate-100">
+              <CardTitle className="font-black text-2xl flex items-center gap-3">
+                <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-100"><Users2 size={24} /></div>
+                أداء الغرف والخدمات
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right">
+                  <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                    <tr>
+                      <th className="px-8 py-5">الغرفة / الخدمة</th>
+                      <th className="px-8 py-5 text-center">عدد الحجوزات</th>
+                      <th className="px-8 py-5 text-left">إجمالي الدخل</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {analyticsData.roomUsage.length === 0 ? (
+                      <tr><td colSpan={3} className="px-8 py-20 text-center text-slate-300 font-bold">لا يوجد بيانات للغرف في هذه الفترة</td></tr>
+                    ) : (
+                      analyticsData.roomUsage.map((room, i) => (
+                        <tr key={i} className="hover:bg-slate-50/50 transition-colors group">
+                          <td className="px-8 py-5">
+                             <p className="font-black text-slate-700 text-lg">{room.name}</p>
+                             <div className="flex gap-1 mt-1">
+                                {[1,2,3,4,5].map(s => <div key={s} className={`w-1.5 h-1.5 rounded-full ${i === 0 ? 'bg-amber-400' : 'bg-slate-200'}`} />)}
+                             </div>
+                          </td>
+                          <td className="px-8 py-5 text-center">
+                            <span className="px-4 py-2 bg-slate-100 rounded-xl font-black text-slate-600 group-hover:bg-indigo-600 group-hover:text-white transition-all">{room.count} حجز</span>
+                          </td>
+                          <td className="px-8 py-5 text-left">
+                            <p className="font-black text-xl text-slate-900">{room.revenue.toLocaleString()} <span className="text-xs text-slate-400">ج.م</span></p>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Performance Chart - Enhanced with Net Profit Indicator */}
+        <Card className="border-none shadow-2xl shadow-slate-100 rounded-[3rem] bg-white border border-slate-50 overflow-hidden relative">
+          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-600 via-emerald-500 to-rose-400" />
+          <CardHeader className="pb-0">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl shadow-sm"><BarChart3 size={24} /></div>
+                <div>
+                  <CardTitle className="font-black text-2xl">تحليل النمو والأداء المالي</CardTitle>
+                  <CardDescription className="font-bold text-slate-400">مقارنة الإيرادات بالمصروفات وصافي الربح للفترة المحددة</CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center flex-wrap gap-4 px-6 py-3 bg-slate-50 rounded-2xl">
+                 <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-indigo-600 rounded-full shadow-sm shadow-indigo-100" /> 
+                    <span className="text-[10px] font-black text-slate-600">الدخل</span>
+                 </div>
+                 <div className="flex items-center gap-2 border-r border-slate-200 pr-4">
+                    <div className="w-3 h-3 bg-rose-400 rounded-full shadow-sm shadow-rose-100" /> 
+                    <span className="text-[10px] font-black text-slate-600">المصروفات</span>
+                 </div>
+                 <div className="flex items-center gap-2 border-r border-slate-200 pr-4">
+                    <div className="w-3 h-3 bg-emerald-500 rounded-full shadow-sm shadow-emerald-100" /> 
+                    <span className="text-[10px] font-black text-slate-600">صافي الربح</span>
+                 </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-12">
+            <div className="h-96 flex items-end gap-3 sm:gap-4 px-6 pb-16 border-b-2 border-slate-50 relative group/chart">
+              {/* Vertical Labels */}
+              <div className="absolute left-0 top-0 bottom-16 w-10 flex flex-col justify-between text-[8px] font-black text-slate-300 pointer-events-none">
+                 <span>100%</span>
+                 <span>75%</span>
+                 <span>50%</span>
+                 <span>25%</span>
+                 <span>0%</span>
+              </div>
+              
+              <div className="absolute inset-0 top-0 bottom-16 flex flex-col justify-between pointer-events-none opacity-20 px-10">
+                 {[1,2,3,4,5].map(l => <div key={l} className="border-t border-slate-300 border-dashed w-full" />)}
+              </div>
+
+              {analyticsData.dailyPerformance.slice(-15).map((day, i) => {
+                const max = Math.max(...analyticsData.dailyPerformance.map(d => Math.max(d.revenue, d.expenses)), 1000);
+                const revHeight = (day.revenue / max) * 100;
+                const expHeight = (day.expenses / max) * 100;
+                const netProfit = day.revenue - day.expenses;
+                const isPositive = netProfit >= 0;
+                
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-2 group relative h-full justify-end">
+                    <div className="flex gap-1.5 items-end w-full h-full justify-center pb-1">
+                      {/* Revenue Bar */}
+                      <div 
+                        className="w-2 sm:w-4 bg-gradient-to-t from-indigo-700 to-indigo-500 rounded-t-full transition-all duration-1000 hover:scale-x-110 relative group/rev shadow-sm shadow-indigo-100"
+                        style={{ height: `${revHeight}%` }}
+                      >
+                         <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-black px-3 py-2 rounded-xl opacity-0 group-hover/rev:opacity-100 transition-all scale-75 group-hover/rev:scale-100 whitespace-nowrap z-50 shadow-2xl">
+                            <p className="text-indigo-400 text-[8px] mb-0.5">الدخل</p>
+                            {day.revenue.toLocaleString()} ج.م
+                         </div>
+                      </div>
+                      
+                      {/* Expense Bar */}
+                      <div 
+                        className="w-2 sm:w-4 bg-gradient-to-t from-rose-500 to-rose-300 rounded-t-full transition-all duration-1000 hover:scale-x-110 relative group/exp shadow-sm shadow-rose-100"
+                        style={{ height: `${expHeight}%` }}
+                      >
+                         <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-[10px] font-black px-3 py-2 rounded-xl opacity-0 group-hover/exp:opacity-100 transition-all scale-75 group-hover/exp:scale-100 whitespace-nowrap z-50 shadow-2xl">
+                            <p className="text-rose-200 text-[8px] mb-0.5">المصروفات</p>
+                            {day.expenses.toLocaleString()} ج.م
+                         </div>
+                      </div>
+                    </div>
+
+                    {/* Net Profit Indicator Dot */}
+                    <div className="absolute bottom-[10%] w-full flex justify-center pointer-events-none">
+                       <div className={`w-2 h-2 rounded-full border-2 border-white shadow-sm ${isPositive ? 'bg-emerald-500 shadow-emerald-200' : 'bg-rose-600 shadow-rose-200'}`} />
+                    </div>
+
+                    <span className="text-[9px] font-black text-slate-400 rotate-45 mt-6 origin-left whitespace-nowrap opacity-60 group-hover:opacity-100 transition-opacity">
+                      {new Date(day.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-10 grid grid-cols-2 md:grid-cols-4 gap-6 p-6 bg-slate-50/50 rounded-[2rem] border border-slate-100">
+               <div className="text-center md:text-right">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">أعلى إيراد يومي</p>
+                  <p className="text-xl font-black text-indigo-600">{Math.max(...analyticsData.dailyPerformance.map(d => d.revenue)).toLocaleString()} <span className="text-xs">ج.م</span></p>
+               </div>
+               <div className="text-center md:text-right border-r border-slate-200 pr-6">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">متوسط الربح اليومي</p>
+                  <p className="text-xl font-black text-emerald-600">{(analyticsData.netProfit / (analyticsData.dailyPerformance.length || 1)).toFixed(0).toLocaleString()} <span className="text-xs">ج.م</span></p>
+               </div>
+               <div className="text-center md:text-right border-r border-slate-200 pr-6">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">عدد أيام النشاط</p>
+                  <p className="text-xl font-black text-slate-900">{analyticsData.dailyPerformance.length} يوم</p>
+               </div>
+               <div className="text-center md:text-right border-r border-slate-200 pr-6">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">حالة الأداء</p>
+                  <div className="flex items-center gap-2 justify-center md:justify-start">
+                     <span className={`w-2 h-2 rounded-full ${analyticsData.netProfit > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                     <p className="text-sm font-black text-slate-700">{analyticsData.netProfit > 0 ? 'نمو إيجابي' : 'تحت المراجعة'}</p>
+                  </div>
+               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Sessions List for Daily Analysis */}
+        {analyticsPeriod === 'day' && (
+          <Card className="border-none shadow-2xl shadow-slate-100 rounded-[3rem] overflow-hidden bg-white border border-slate-50 mt-12">
+            <CardHeader className="bg-slate-900 text-white pb-10 relative">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full -mr-32 -mt-32 blur-3xl" />
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+                <div className="flex items-center gap-4">
+                  <div className="p-4 bg-white/10 rounded-2xl shadow-lg border border-white/5"><Receipt size={28} className="text-indigo-400" /></div>
+                  <div>
+                    <CardTitle className="text-2xl font-black">سجل عمليات اليوم</CardTitle>
+                    <CardDescription className="text-slate-400 font-bold">عرض وتعديل كافة عمليات الدفع المسجلة لهذا اليوم</CardDescription>
+                  </div>
+                </div>
+                <div className="px-6 py-2 bg-white/10 rounded-full border border-white/10 text-xs font-black text-indigo-300">
+                  {analyticsData.sessions.length} عملية مسجلة
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right">
+                  <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                    <tr>
+                      <th className="px-8 py-5">العميل / الكود</th>
+                      <th className="px-8 py-5">المبلغ الإجمالي</th>
+                      <th className="px-8 py-5">وسيلة الدفع</th>
+                      <th className="px-8 py-5">وقت الانتهاء</th>
+                      <th className="px-8 py-5 text-center">الإجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {analyticsData.sessions.length === 0 ? (
+                      <tr><td colSpan={5} className="px-8 py-24 text-center text-slate-300 font-black">لا يوجد عمليات مسجلة لهذا التاريخ</td></tr>
+                    ) : (
+                      analyticsData.sessions.map((session, i) => (
+                        <tr key={session.id} className="hover:bg-slate-50/50 transition-colors group">
+                          <td className="px-8 py-5">
+                            <p className="font-black text-slate-900">{session.user_name || 'N/A'}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{session.user_code}</p>
+                          </td>
+                          <td className="px-8 py-5">
+                            <p className="font-black text-lg text-slate-900">{session.total_amount?.toLocaleString()} <span className="text-xs text-slate-400">ج.م</span></p>
+                            <p className="text-[9px] text-indigo-500 font-bold">بوفيه: {session.catering_amount || 0} ج.م</p>
+                          </td>
+                          <td className="px-8 py-5">
+                            <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black inline-flex items-center gap-2 ${
+                              session.payment_method === 'vfcash' ? 'bg-rose-50 text-rose-600' :
+                              session.payment_method === 'instapay' ? 'bg-indigo-50 text-indigo-600' :
+                              session.payment_method === 'corporate' ? 'bg-amber-50 text-amber-600' :
+                              'bg-emerald-50 text-emerald-600'
+                            }`}>
+                              {session.payment_method === 'vfcash' ? <Phone size={12} /> : 
+                               session.payment_method === 'instapay' ? <Smartphone size={12} /> : 
+                               session.payment_method === 'corporate' ? <Briefcase size={12} /> : 
+                               <DollarSign size={12} />}
+                              {session.payment_method === 'vfcash' ? 'Vodafone Cash' :
+                               session.payment_method === 'instapay' ? 'InstaPay' :
+                               session.payment_method === 'corporate' ? 'Corporate' :
+                               'نقدي (كاش)'}
+                            </span>
+                          </td>
+                          <td className="px-8 py-5 text-sm font-bold text-slate-500">
+                            {session.end_time ? new Date(session.end_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'قيد التشغيل'}
+                          </td>
+                          <td className="px-8 py-5 text-center">
+                            <Button 
+                              onClick={() => setEditingPaymentSession(session)}
+                              className="w-10 h-10 p-0 rounded-xl bg-white border border-slate-100 text-indigo-600 shadow-sm hover:shadow-md hover:bg-indigo-50 hover:border-indigo-200 transition-all active:scale-90"
+                            >
+                              <Edit size={18} />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  };
+
+  const renderDigitalHistory = () => {
+    if (activeTab !== 'digital') return null;
+    
+    return (
+      <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatCard title="إجمالي فودافون كاش" value={dailyData.details.vfcash.toLocaleString()} icon={Phone} color="rose" />
+          <StatCard title="إجمالي InstaPay" value={dailyData.details.instapay.toLocaleString()} icon={Smartphone} color="indigo" />
+          <StatCard title="عدد التحويلات" value={dailyData.vfcashPayments.length.toLocaleString()} icon={Users2} />
+          <StatCard title="معدل التحويل" value={((dailyData.details.vfcash + dailyData.details.instapay) / ((dailyData.income + dailyData.details.vfcash + dailyData.details.instapay) || 1) * 100).toFixed(1) + '%'} icon={TrendingUp} />
+        </div>
+
+        <Card className="border-none shadow-xl shadow-slate-100 overflow-hidden">
+          <CardHeader className="bg-slate-900 text-white pb-8">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-white/10 rounded-2xl">
+                <ArrowRightLeft size={24} className="text-indigo-400" />
+              </div>
+              <div>
+                <CardTitle className="text-xl font-black">تاريخ التحويلات الرقمية</CardTitle>
+                <CardDescription className="text-slate-400">سجل مفصل للتحويلات عبر فودافون كاش وإنستا باي لليوم المحدد</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-right">
+                <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                  <tr>
+                    <th className="px-6 py-4">العميل</th>
+                    <th className="px-6 py-4">الوسيلة</th>
+                    <th className="px-6 py-4">المبلغ</th>
+                    <th className="px-6 py-4">الوقت</th>
+                    <th className="px-6 py-4">المسؤول (الآدمن)</th>
+                    <th className="px-6 py-4">واتساب</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {dailyData.vfcashPayments.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-20 text-center">
+                        <div className="flex flex-col items-center gap-3 text-slate-300">
+                          <Phone size={48} className="opacity-20" />
+                          <p className="font-black text-sm">لا يوجد تحويلات رقمية مسجلة لهذا اليوم</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    dailyData.vfcashPayments.map((p, i) => (
+                      <tr key={i} className="hover:bg-slate-50/50 transition-all group">
+                        <td className="px-6 py-5">
+                          <p className="text-sm font-black text-slate-700">{p.user_name || p.user_code}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Session #{p.id.slice(0, 8)}</p>
+                        </td>
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-3 py-1 rounded-lg text-[10px] font-black inline-flex items-center gap-1.5 ${p.payment_method === 'vfcash' ? 'bg-rose-50 text-rose-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                              {p.payment_method === 'vfcash' ? <Phone size={10} /> : <Smartphone size={10} />}
+                              {p.payment_method === 'vfcash' ? 'Vodafone Cash' : 'InstaPay'}
+                            </span>
+                            <button onClick={() => setEditingPaymentSession(p)} className="p-1.5 hover:bg-slate-100 rounded-lg text-indigo-400 transition-all opacity-0 group-hover:opacity-100">
+                              <Edit size={12} />
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-6 py-5">
+                          <p className="text-sm font-black text-slate-900">{p.total_amount} <span className="text-[10px] opacity-40">EGP</span></p>
+                        </td>
+                        <td className="px-6 py-5 text-xs font-bold text-slate-500">
+                          {new Date(p.vfcash_payment_time || p.end_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-indigo-600 font-black text-[10px] border border-slate-200">
+                              {p.profiles?.full_name?.split(' ').map((n: any) => n[0]).join('').slice(0, 2) || 'AD'}
+                            </div>
+                            <div>
+                              <p className="text-xs font-black text-slate-700">{p.profiles?.full_name || 'System Admin'}</p>
+                              <p className="text-[8px] text-slate-400 font-bold uppercase">{p.vfcash_admin_id?.slice(0, 8) || 'AUTO-LOG'}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-5">
+                          {p.vfcash_whatsapp_confirmed ? (
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black border border-emerald-100">
+                              <CheckCircle2 size={12} /> تم التأكيد
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-50 text-rose-300 rounded-full text-[10px] font-black border border-rose-100">
+                              <X size={12} /> لم يتم الربط
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   };
@@ -1216,9 +2070,10 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
         <div className="flex bg-slate-100 p-1.5 rounded-2xl">
           {[
             { id: 'daily', label: 'التقرير اليومي', icon: Calendar },
-            { id: 'monthly', label: 'التقرير الشهري', icon: BarChart3 },
-            { id: 'annual', label: 'التقرير السنوي', icon: TrendingUp },
+            // { id: 'monthly', label: 'التقرير الشهري', icon: BarChart3 },
+            // { id: 'annual', label: 'التقرير السنوي', icon: TrendingUp },
             { id: 'digital', label: 'التحويلات الرقمية', icon: Phone },
+            { id: 'analytics', label: 'تحليلات الأداء', icon: BarChart3 },
           ].map(tab => (
             <button
               key={tab.id}
@@ -1252,8 +2107,9 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
       </div>
 
       {activeTab === 'daily' ? renderDaily() : 
-       activeTab === 'monthly' ? renderMonthly() : 
+       // activeTab === 'monthly' ? renderMonthly() : 
        activeTab === 'digital' ? renderDigitalHistory() :
+       activeTab === 'analytics' ? renderAnalytics() :
        renderAnnual()}
 
       {/* Petty Cash Modal - Enhanced Design */}
@@ -1445,110 +2301,47 @@ export const FinancePanel = ({ branchId }: { branchId?: string }) => {
           </div>
         </div>
       </Modal>
+      
+      {/* Edit Payment Method Modal */}
+      <Modal
+        isOpen={!!editingPaymentSession}
+        onClose={() => setEditingPaymentSession(null)}
+        title="تعديل وسيلة الدفع"
+      >
+        <div className="p-2 pt-4 text-center space-y-8">
+          <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+            <p className="text-[10px] font-black text-slate-400 uppercase mb-2">العميل</p>
+            <h4 className="text-xl font-black text-slate-900">{editingPaymentSession?.user_name || editingPaymentSession?.user_code}</h4>
+            <p className="text-sm font-bold text-indigo-600 mt-1">المبلغ: {editingPaymentSession?.total_amount} ج.م</p>
+          </div>
 
-      {renderDigitalHistory()}
+          <div className="grid grid-cols-2 gap-4">
+            {[
+              { id: 'cash', label: 'كاش (نقدي)', icon: Wallet, color: 'text-emerald-600 bg-emerald-50' },
+              { id: 'vfcash', label: 'Vodafone Cash', icon: Phone, color: 'text-rose-600 bg-rose-50' },
+              { id: 'instapay', label: 'InstaPay', icon: Smartphone, color: 'text-indigo-600 bg-indigo-50' },
+              { id: 'corporate', label: 'حساب شركة', icon: Users2, color: 'text-amber-600 bg-amber-50' },
+            ].map(method => (
+              <button
+                key={method.id}
+                onClick={() => handleUpdatePaymentMethod(editingPaymentSession.id, method.id)}
+                className={`p-6 rounded-[2rem] border-2 transition-all flex flex-col items-center gap-3 group ${editingPaymentSession?.payment_method === method.id ? 'border-indigo-600 bg-indigo-50/30' : 'border-slate-50 hover:border-slate-200 bg-white'}`}
+              >
+                <div className={`p-4 rounded-2xl ${method.color} transition-transform group-hover:scale-110`}>
+                  <method.icon size={24} />
+                </div>
+                <span className="font-black text-sm text-slate-700">{method.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <Button variant="ghost" onClick={() => setEditingPaymentSession(null)} className="w-full h-14 rounded-2xl font-black text-slate-400">إلغاء</Button>
+        </div>
+      </Modal>
     </div>
   );
 
-  function renderDigitalHistory() {
-    if (activeTab !== 'digital') return null;
-    
-    return (
-      <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatCard title="إجمالي فودافون كاش" value={dailyData.details.vfcash.toLocaleString()} icon={Phone} color="rose" />
-          <StatCard title="إجمالي InstaPay" value={dailyData.details.instapay.toLocaleString()} icon={Smartphone} color="indigo" />
-          <StatCard title="عدد التحويلات" value={dailyData.vfcashPayments.length.toLocaleString()} icon={Users2} />
-          <StatCard title="معدل التحويل" value={((dailyData.details.vfcash + dailyData.details.instapay) / ((dailyData.income + dailyData.details.vfcash + dailyData.details.instapay) || 1) * 100).toFixed(1) + '%'} icon={TrendingUp} />
-        </div>
 
-        <Card className="border-none shadow-xl shadow-slate-100 overflow-hidden">
-          <CardHeader className="bg-slate-900 text-white pb-8">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-white/10 rounded-2xl">
-                <ArrowRightLeft size={24} className="text-indigo-400" />
-              </div>
-              <div>
-                <CardTitle className="text-xl font-black">تاريخ التحويلات الرقمية</CardTitle>
-                <CardDescription className="text-slate-400">سجل مفصل للتحويلات عبر فودافون كاش وإنستا باي لليوم المحدد</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-right">
-                <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  <tr>
-                    <th className="px-6 py-4">العميل</th>
-                    <th className="px-6 py-4">الوسيلة</th>
-                    <th className="px-6 py-4">المبلغ</th>
-                    <th className="px-6 py-4">الوقت</th>
-                    <th className="px-6 py-4">المسؤول (الآدمن)</th>
-                    <th className="px-6 py-4">واتساب</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {dailyData.vfcashPayments.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-20 text-center">
-                        <div className="flex flex-col items-center gap-3 text-slate-300">
-                          <Phone size={48} className="opacity-20" />
-                          <p className="font-black text-sm">لا يوجد تحويلات رقمية مسجلة لهذا اليوم</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    dailyData.vfcashPayments.map((p, i) => (
-                      <tr key={i} className="hover:bg-slate-50/50 transition-all group">
-                        <td className="px-6 py-5">
-                          <p className="text-sm font-black text-slate-700">{p.user_name || p.user_code}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Session #{p.id.slice(0, 8)}</p>
-                        </td>
-                        <td className="px-6 py-5">
-                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black inline-flex items-center gap-1.5 ${p.payment_method === 'vfcash' ? 'bg-rose-50 text-rose-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                            {p.payment_method === 'vfcash' ? <Phone size={10} /> : <Smartphone size={10} />}
-                            {p.payment_method === 'vfcash' ? 'Vodafone Cash' : 'InstaPay'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-5">
-                          <p className="text-sm font-black text-slate-900">{p.total_amount} <span className="text-[10px] opacity-40">EGP</span></p>
-                        </td>
-                        <td className="px-6 py-5 text-xs font-bold text-slate-500">
-                          {new Date(p.vfcash_payment_time || p.end_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-indigo-600 font-black text-[10px] border border-slate-200">
-                              {p.profiles?.full_name?.split(' ').map((n: any) => n[0]).join('').slice(0, 2) || 'AD'}
-                            </div>
-                            <div>
-                              <p className="text-xs font-black text-slate-700">{p.profiles?.full_name || 'System Admin'}</p>
-                              <p className="text-[8px] text-slate-400 font-bold uppercase">{p.vfcash_admin_id?.slice(0, 8) || 'AUTO-LOG'}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          {p.vfcash_whatsapp_confirmed ? (
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black border border-emerald-100">
-                              <CheckCircle2 size={12} /> تم التأكيد
-                            </div>
-                          ) : (
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-50 text-rose-300 rounded-full text-[10px] font-black border border-rose-100">
-                              <X size={12} /> لم يتم الربط
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 };
 
 export default FinancePanel;

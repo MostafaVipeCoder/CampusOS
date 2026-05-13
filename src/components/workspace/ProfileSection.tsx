@@ -3,6 +3,7 @@ import React from 'react';
 import { Zap, Sparkles, CreditCard, Clock, RefreshCw, MapPin, Users, Coffee, Award, LayoutGrid, CheckCircle2 } from 'lucide-react';
 
 interface ProfileSectionProps {
+  session: any;
   profileData: any;
   totalMinutes: number;
   userCompany: any;
@@ -14,12 +15,12 @@ interface ProfileSectionProps {
   convertPointsToCashback: () => void;
   checkCompanyMembership: (id: string, phone: string) => void;
   setLeaderData: (data: any) => void;
-  session: any;
   ptsPerHour: number;
   cbRatio: number;
 }
 
 export const ProfileSection = ({
+  session,
   profileData,
   totalMinutes,
   userCompany,
@@ -31,7 +32,6 @@ export const ProfileSection = ({
   convertPointsToCashback,
   checkCompanyMembership,
   setLeaderData,
-  session,
   ptsPerHour,
   cbRatio
 }: ProfileSectionProps) => {
@@ -197,7 +197,7 @@ export const ProfileSection = ({
                <div className="space-y-3 pt-4 border-t border-white/5">
                   <div className="flex flex-row-reverse justify-between text-xs font-black">
                      <span className="text-slate-400 uppercase tracking-widest">المتبقي من الساعات</span>
-                     <span className="text-white">{(activeSub.total_hours - activeSub.used_hours).toFixed(1)} / {activeSub.total_hours}H</span>
+                     <span className="text-white">{(Number(activeSub.total_hours || 0) - Number(activeSub.used_hours || 0)).toFixed(1)} / {activeSub.total_hours || 0}H</span>
                   </div>
                   <div className="h-3 bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/5">
                       <div 

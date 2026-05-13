@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Search, LayoutGrid, LayoutList, Sparkles, Coffee, Cookie, Package, RefreshCw, CheckCircle2, ShoppingBag, X, Plus, PenTool, Receipt, MapPin } from 'lucide-react';
+import { Search, LayoutGrid, LayoutList, Sparkles, Coffee, Cookie, Package, RefreshCw, CheckCircle2, ShoppingBag, X, Plus, PenTool, Receipt, MapPin, Zap } from 'lucide-react';
 
 interface CateringStoreProps {
   cateringItems: any[];
@@ -14,8 +14,10 @@ interface CateringStoreProps {
   addToCart: (item: any) => void;
   removeFromCart: (id: string) => void;
   handleCheckoutCart: () => void;
+  handleCheckoutWithCashback: () => void;
   orderLoading: boolean;
   session: any;
+  profileData: any;
 }
 
 export const CateringStore = ({
@@ -30,8 +32,10 @@ export const CateringStore = ({
   addToCart,
   removeFromCart,
   handleCheckoutCart,
+  handleCheckoutWithCashback,
   orderLoading,
-  session
+  session,
+  profileData
 }: CateringStoreProps) => {
   return (
     <div className="w-full max-w-lg mx-auto space-y-6 animate-in fade-in duration-500 pb-20 text-right font-['Cairo']">
@@ -40,7 +44,7 @@ export const CateringStore = ({
           <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Cloud Store & Catering</p>
         </div>
 
-        {session.orders?.length > 0 && (
+        {Array.isArray(session?.orders) && session.orders.length > 0 && (
             <div className="mb-12 pb-10 border-b-2 border-dashed border-white/5 text-right animate-in fade-in slide-in-from-top-10 duration-1000">
                 <div className="flex flex-col items-center mb-8">
                   <div className="w-16 h-16 bg-indigo-500/10 text-indigo-400 rounded-2xl flex items-center justify-center mb-4 shadow-2xl border border-white/5">
@@ -163,18 +167,40 @@ export const CateringStore = ({
                     <span className="text-[10px] opacity-40 mr-1.5 uppercase tracking-tighter">EGP Total</span>
                  </p>
                </div>
-               <button 
-                 onClick={handleCheckoutCart}
-                 disabled={orderLoading}
-                 className="h-14 px-8 bg-indigo-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-600/20 hover:bg-indigo-500 hover:-translate-y-1 transition-all active:scale-95 flex items-center gap-3"
-               >
-                 {orderLoading ? <RefreshCw className="animate-spin" size={18} /> : (
-                   <>
-                     إتمام الطلب
-                     <CheckCircle2 size={20} />
-                   </>
-                 )}
-               </button>
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={handleCheckoutCart}
+                    disabled={orderLoading}
+                    className="h-14 px-8 bg-indigo-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-600/20 hover:bg-indigo-500 hover:-translate-y-1 transition-all active:scale-95 flex items-center justify-center gap-3 w-full"
+                  >
+                    {orderLoading ? <RefreshCw className="animate-spin" size={18} /> : (
+                      <>
+                        إضافة للحساب
+                        <ShoppingBag size={20} />
+                      </>
+                    )}
+                  </button>
+
+                  {profileData && (
+                    <button 
+                      onClick={handleCheckoutWithCashback}
+                      disabled={orderLoading || (profileData.cashback_balance || 0) < (Object.values(cart) as any[]).reduce((sum, entry) => sum + ((entry.item.selling_price || entry.item.price) * entry.quantity), 0)}
+                      className="h-14 px-8 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded-2xl font-black shadow-xl hover:bg-emerald-600 hover:text-white hover:-translate-y-1 transition-all active:scale-95 flex items-center justify-center gap-3 w-full disabled:opacity-30 disabled:pointer-events-none group"
+                    >
+                      <div className="flex flex-col items-center">
+                        <div className="flex items-center gap-2">
+                          {orderLoading ? <RefreshCw className="animate-spin" size={18} /> : (
+                            <>
+                              دفع بالكاش باك
+                              <Zap size={18} className="fill-emerald-400 group-hover:fill-white" />
+                            </>
+                          )}
+                        </div>
+                        <span className="text-[9px] opacity-60">رصيدك: {profileData.cashback_balance || 0} ج.م</span>
+                      </div>
+                    </button>
+                  )}
+                </div>
              </div>
            </div>
         )}

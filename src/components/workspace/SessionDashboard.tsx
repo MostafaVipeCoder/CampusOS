@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, Button } from '../ui';
-import { Sparkles, Clock, RefreshCw, LogOut, Plus, HelpCircle, Wind, CheckCircle2, X, Phone } from 'lucide-react';
+import { Sparkles, Clock, RefreshCw, LogOut, Plus, HelpCircle, Wind, CheckCircle2, X, Phone, Zap } from 'lucide-react';
 import WalkieTalkie from './WalkieTalkie';
 
 interface SessionDashboardProps {
@@ -13,6 +13,7 @@ interface SessionDashboardProps {
   cbRatio: number;
   showCheckoutConfirm: boolean;
   handleCheckoutRequest: () => void;
+  handleRequestCashback: (amount: number) => void;
   profileData?: any;
 }
 
@@ -26,6 +27,7 @@ export const SessionDashboard = ({
   cbRatio,
   showCheckoutConfirm,
   handleCheckoutRequest,
+  handleRequestCashback,
   profileData
 }: SessionDashboardProps) => {
   return (
@@ -75,7 +77,9 @@ export const SessionDashboard = ({
             <div className="flex items-center gap-8 mt-10 w-full pt-8 border-t border-white/5">
                <div className="flex-1 text-center border-r border-white/5">
                   <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Start Time</p>
-                  <p className="text-sm font-black text-white">{new Date(session.start_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</p>
+                  <p className="text-sm font-black text-white">
+                    {session?.start_time ? new Date(session.start_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                  </p>
                </div>
                <div className="flex-1 text-center">
                   <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Session Status</p>
@@ -164,6 +168,51 @@ export const SessionDashboard = ({
             <div className="h-24 bg-white/5 border border-white/10 rounded-[2.5rem] p-6 flex items-center justify-center gap-4 text-slate-400 animate-pulse">
                 <RefreshCw size={24} className="animate-spin" />
                 <span className="font-black text-lg">جاري مراجعة طلبك..</span>
+            </div>
+          )}
+
+          {profileData && (profileData.cashback_balance > 0) && (
+            <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-[2.5rem] p-6 space-y-4">
+               <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                     <div className="p-2 bg-emerald-500/20 rounded-xl text-emerald-400">
+                        <Zap size={18} />
+                     </div>
+                     <span className="text-sm font-black text-white">رصيد الكاش باك</span>
+                  </div>
+                  <span className="text-lg font-black text-emerald-400">{profileData.cashback_balance} ج.م</span>
+               </div>
+               
+               <div className="flex gap-2">
+                  {[25, 50, 100].map(amt => (
+                    <button
+                      key={amt}
+                      onClick={() => handleRequestCashback(amt)}
+                      disabled={amt > profileData.cashback_balance || session.status === 'checkout_requested'}
+                      className="flex-1 py-3 bg-white/5 hover:bg-emerald-600/20 border border-white/10 hover:border-emerald-500/30 rounded-2xl text-xs font-black text-slate-400 hover:text-emerald-400 transition-all disabled:opacity-20"
+                    >
+                      خصم {amt}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => {
+                       const custom = prompt("ادخل المبلغ الذي تريد خصمه:");
+                       if (custom && !isNaN(Number(custom))) {
+                          handleRequestCashback(Number(custom));
+                       }
+                    }}
+                    disabled={session.status === 'checkout_requested'}
+                    className="flex-1 py-3 bg-white/5 hover:bg-emerald-600/20 border border-white/10 hover:border-emerald-500/30 rounded-2xl text-xs font-black text-slate-400 hover:text-emerald-400 transition-all disabled:opacity-20"
+                  >
+                    مبلغ آخر
+                  </button>
+               </div>
+               {session.notes?.includes('|USER_REQUESTED_CASHBACK:') && (
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-400 bg-emerald-400/10 p-2 rounded-lg">
+                     <CheckCircle2 size={12} />
+                     <span>تم طلب خصم: {session.notes.match(/\|USER_REQUESTED_CASHBACK:(\d+)\|/)?.[1]} ج.م عند الدفع</span>
+                  </div>
+               )}
             </div>
           )}
       </div>

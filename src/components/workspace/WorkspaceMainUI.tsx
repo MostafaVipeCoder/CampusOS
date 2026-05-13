@@ -24,6 +24,8 @@ export const WorkspaceMainUI = ({
   addToCart,
   removeFromCart,
   handleCheckoutCart,
+  handleCheckoutWithCashback,
+  handleRequestCashback,
   orderLoading,
   profileData,
   totalMinutes,
@@ -77,14 +79,14 @@ export const WorkspaceMainUI = ({
             
             <h1 className="text-xl md:text-3xl font-black text-white leading-tight flex items-center gap-2 justify-end">
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70">
-                {session.customers?.full_name?.split(' ')[0] || 'المستخدم'}
+                {session?.customers?.full_name?.split(' ')[0] || 'المستخدم'}
               </span>
               <span className="text-slate-500 font-bold opacity-30 text-sm md:text-base pr-1">،أهلاً</span>
             </h1>
             <div className="flex items-center justify-end gap-2 mt-1.5">
                <div className="flex items-center gap-1.5 bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">
                   <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse mr-0.5" />
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">{session.user_code}</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">{session?.user_code || '---'}</span>
                </div>
                {userCompany && (
                  <span className="text-[10px] font-black text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-lg border border-indigo-500/20">Corp</span>
@@ -108,6 +110,7 @@ export const WorkspaceMainUI = ({
             cbRatio={cbRatio}
             showCheckoutConfirm={showCheckoutConfirm}
             handleCheckoutRequest={handleCheckoutRequest}
+            handleRequestCashback={handleRequestCashback}
             profileData={profileData}
           />
         )}
@@ -125,13 +128,16 @@ export const WorkspaceMainUI = ({
             addToCart={addToCart}
             removeFromCart={removeFromCart}
             handleCheckoutCart={handleCheckoutCart}
+            handleCheckoutWithCashback={handleCheckoutWithCashback}
             orderLoading={orderLoading}
             session={session}
+            profileData={profileData}
           />
         )}
 
         {activeTab === 'profile' && (
           <ProfileSection 
+            session={session}
             profileData={profileData}
             totalMinutes={totalMinutes}
             userCompany={userCompany}
@@ -143,7 +149,6 @@ export const WorkspaceMainUI = ({
             convertPointsToCashback={convertPointsToCashback}
             checkCompanyMembership={checkCompanyMembership}
             setLeaderData={setLeaderData}
-            session={session}
             ptsPerHour={ptsPerHour}
             cbRatio={cbRatio}
           />
@@ -240,7 +245,14 @@ export const WorkspaceMainUI = ({
             return (
               <button 
                 key={tab.id}
-                onClick={() => { setActiveTab(tab.id as any); if (tab.action) tab.action(); }} 
+                onClick={() => { 
+                  try {
+                    setActiveTab(tab.id as any); 
+                    if (tab.action) tab.action(); 
+                  } catch (err) {
+                    console.error(`Error switching to tab ${tab.id}:`, err);
+                  }
+                }} 
                 className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-all relative ${
                   isActive ? 'text-[#1ed788]' : 'text-slate-500 hover:text-slate-300'
                 }`}

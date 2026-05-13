@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, CheckCircle2, AlertCircle, RefreshCw, X, Receipt, Users2, Sparkles, Plus, Lock, Briefcase, Layout, DollarSign, Phone, Printer, Smartphone, ShieldCheck } from 'lucide-react';
+import { Clock, CheckCircle2, AlertCircle, RefreshCw, X, Receipt, Users2, Sparkles, Plus, Lock, Briefcase, Layout, DollarSign, Phone, Printer, Smartphone, ShieldCheck, Search, Edit } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { calculateSessionPrice } from '../lib/pricing';
@@ -26,6 +26,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
   const [checkoutBill, setCheckoutBill] = useState<any>(null);
   const [editingBill, setEditingBill] = useState<any>(null);
   const [manualCode, setManualCode] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [showGuestModal, setShowGuestModal] = useState(false);
   const [startingSession, setStartingSession] = useState(false);
   const [inventory, setInventory] = useState<any[]>([]);
   const [pointsPerHour, setPointsPerHour] = useState(10);
@@ -37,6 +39,14 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
   const [activePartner, setActivePartner] = useState<any>(null);
   const [isVerifyingPartner, setIsVerifyingPartner] = useState(false);
   const [vfcashWhatsapp, setVfcashWhatsapp] = useState(false);
+
+  // History & Filter States
+  const [activeView, setActiveView] = useState<'active' | 'history'>('active');
+  const [historySessions, setHistorySessions] = useState<Session[]>([]);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyMonth, setHistoryMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [editingPaymentSession, setEditingPaymentSession] = useState<any | null>(null);
 
   const SUBSCRIPTION_PACKAGES = [
     { id: 1, name: '40 Hours', hours: 40, price: 320 },
@@ -143,6 +153,123 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     };
   }, [branchId]);
 
+  const fetchHistory = async () => {
+    if (!branchId) return;
+    setHistoryLoading(true);
+    try {
+        const startOfMonth = new Date(`${historyMonth}-01T00:00:00Z`).toISOString();
+        const nextMonthDate = new Date(`${historyMonth}-01T00:00:00Z`);
+        nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+        const endOfMonth = nextMonthDate.toISOString();
+
+        let query = supabase
+            .from('workspace_sessions')
+            .select(`
+                *,
+                customers (full_name),
+                partners (name)
+            `)
+            .eq('branch_id', branchId)
+            .gte('start_time', startOfMonth)
+            .lt('start_time', endOfMonth)
+            .order('start_time', { ascending: false });
+
+        if (historySearch) {
+            query = query.or(`user_code.ilike.%${historySearch}%,phone_number.ilike.%${historySearch}%,user_name.ilike.%${historySearch}%`);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        setHistorySessions(data || []);
+    } catch (err) {
+        console.error(err);
+    } finally {
+        setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeView === 'history') {
+      fetchHistory();
+    }
+  }, [activeView, historyMonth, historySearch]);
+
+  const handleUpdatePaymentMethod = async (sessionId: string, newMethod: string) => {
+    try {
+      // 1. Fetch current session data to calculate differences
+      const { data: session, error: fetchErr } = await supabase
+        .from('workspace_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single();
+      
+      if (fetchErr) throw fetchErr;
+      const oldMethod = session.payment_method || 'cash';
+      const amount = Number(session.total_amount) || 0;
+      const dateStr = new Date(session.end_time || session.start_time).toLocaleDateString('en-CA');
+
+      // 2. Prepare session updates
+      const updates: any = { payment_method: newMethod };
+      if (newMethod === 'cash') {
+        updates.vfcash_admin_id = null;
+        updates.vfcash_payment_time = null;
+        updates.vfcash_whatsapp_confirmed = false;
+      } else if (newMethod === 'vfcash' || newMethod === 'instapay') {
+        updates.vfcash_payment_time = new Date().toISOString();
+      }
+
+      // 3. Update the session itself
+      const { error: updateErr } = await supabase
+        .from('workspace_sessions')
+        .update(updates)
+        .eq('id', sessionId);
+      
+      if (updateErr) throw updateErr;
+
+      // 4. Update the Daily History (daily_closings) if it exists
+      if (oldMethod !== newMethod) {
+        const { data: closing } = await supabase
+          .from('daily_closings')
+          .select('*')
+          .eq('branch_id', branchId)
+          .eq('date', dateStr)
+          .single();
+
+        if (closing) {
+          let newExpectedCash = Number(closing.expected_cash) || 0;
+          let newVfCash = Number(closing.vfcash_total) || 0;
+          let newInstaPay = Number(closing.instapay_total) || 0;
+
+          // Deduct from old method
+          if (oldMethod === 'cash') newExpectedCash -= amount;
+          else if (oldMethod === 'vfcash') newVfCash -= amount;
+          else if (oldMethod === 'instapay') newInstaPay -= amount;
+
+          // Add to new method
+          if (newMethod === 'cash') newExpectedCash += amount;
+          else if (newMethod === 'vfcash') newVfCash += amount;
+          else if (newMethod === 'instapay') newInstaPay += amount;
+
+          await supabase
+            .from('daily_closings')
+            .update({
+              expected_cash: newExpectedCash,
+              vfcash_total: newVfCash,
+              instapay_total: newInstaPay,
+              difference: Number(closing.actual_cash) - newExpectedCash
+            })
+            .eq('id', closing.id);
+        }
+      }
+
+      alert('تم تحديث وسيلة الدفع وتعديل السجل المالي بنجاح');
+      setEditingPaymentSession(null);
+      fetchHistory(); 
+    } catch (err: any) {
+      alert('خطأ في التحديث: ' + err.message);
+    }
+  };
+
   useEffect(() => {
     const fetchPointsPerHour = async () => {
       const { data } = await supabase.from('settings').select('key, value').in('key', ['points_per_hour', 'student_cashback_percentage']);
@@ -161,7 +288,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     try {
       const { data, error } = await (supabase as any)
         .from('workspace_sessions')
-        .select(`*, services(code, name_ar, color), partners(*), customers(full_name, loyalty_points, cashback_balance, college, company_members(*, companies(*)), subscriptions(*))`)
+        .select(`*, services(code, name_ar, color, base_price), partners(*), customers(full_name, loyalty_points, cashback_balance, college, company_members(*, companies(*)), subscriptions(*))`)
         .eq('branch_id', branchId || '')
         .in('status', ['active', 'checkout_requested', 'pause_requested', 'paused', 'resume_requested'])
         .order('start_time', { ascending: false });
@@ -312,17 +439,18 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     } else if (session.user_code === 'GUEST_KITCHEN') {
         workspaceAmount = 0;
     } else {
-        workspaceAmount = calculateSessionPrice(diffMinutes) || 0;
+        workspaceAmount = calculateSessionPrice(diffMinutes, Number(session.hourly_price || session.services?.base_price) || 10) || 0;
     }
     
     const orders = Array.isArray(session.orders) ? [...session.orders] : [];
-    const actualCateringCost = orders.reduce((sum, o) => sum + ((Number(o.price) || 0) * (Number(o.quantity) || 1)), 0);
+    const cateringAmount = orders.reduce((sum, o) => sum + ((Number(o.price) || 0) * (Number(o.quantity) || 1)), 0);
+    const actualCateringCost = cateringAmount;
     
     // If it's a business member, the catering is deducted from their balance, space is logged.
     // So the "At Counter" amount becomes 0 if both are business-covered.
     const isBusiness = !!businessMember;
-    const cateringAmount = (isBusiness || isOwner) ? 0 : actualCateringCost;
-    const totalAmount = (isBusiness || isOwner) ? 0 : Math.max(0, parseFloat(((Number(workspaceAmount) || 0) + (Number(cateringAmount) || 0)).toFixed(2)));
+    const requestedCashback = Number((session.notes || '').match(/\|USER_REQUESTED_CASHBACK:(\d+)\|/)?.[1] || 0);
+    const totalAmount = (isBusiness || isOwner) ? 0 : Math.max(0, parseFloat(((Number(workspaceAmount) || 0) + (Number(cateringAmount) || 0) - requestedCashback).toFixed(2)));
 
     setEditingBill({
       ...session,
@@ -345,7 +473,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
       customerId: session.customer_id,
       cashbackBalance: session.customers?.cashback_balance || 0,
       loyaltyPoints: session.customers?.loyalty_points || 0,
-      deductedCashback: 0,
+      deductedCashback: requestedCashback,
       contract: businessContract,
       partners: session.partners
     });
@@ -385,7 +513,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
     } else if (editingBill.user_code === 'GUEST_KITCHEN') {
        workspaceAmount = 0;
     } else {
-       workspaceAmount = calculateSessionPrice(diffMinutes) || 0;
+       workspaceAmount = calculateSessionPrice(diffMinutes, Number(editingBill.hourly_price || editingBill.services?.base_price) || 10) || 0;
     }
 
     const actualCateringCost = (Number(editingBill.actualCateringCost) || 0);
@@ -807,6 +935,13 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
 
   const handleStartManualSession = async () => {
     if (!manualCode.trim()) return;
+
+    // If it's a guest (NA) and we haven't shown the modal yet
+    if (manualCode.trim().toUpperCase().startsWith('NA') && !showGuestModal) {
+      setShowGuestModal(true);
+      return;
+    }
+
     setStartingSession(true);
     try {
       const { data: existing } = await supabase
@@ -832,6 +967,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
         .insert({
           customer_id: customer?.id || null,
           user_code: manualCode.trim().toUpperCase(),
+          user_name: manualCode.trim().toUpperCase().startsWith('NA') ? (guestName.trim() || null) : (customer?.full_name || null),
           phone_number: customer?.phone || 'غير مسجل',
           status: 'active',
           branch_id: branchId,
@@ -842,6 +978,8 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
 
       if (error) throw error;
       setManualCode('');
+      setGuestName('');
+      setShowGuestModal(false);
       fetchSessions();
       alert(customer ? `تم بدء جلسة لـ ${customer.full_name}` : `تم بدء جلسة زائر بكود ${manualCode.toUpperCase()}`);
     } catch (err: any) {
@@ -854,6 +992,17 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
 
   const activeCount = sessions.filter(s => s.status === 'active').length;
   const requestedCount = sessions.filter(s => s.status === 'checkout_requested').length;
+
+  const filteredSessions = sessions.filter(s => {
+    if (!historySearch) return true;
+    const search = historySearch.toLowerCase();
+    return (
+      s.user_code?.toLowerCase().includes(search) ||
+      s.phone_number?.toLowerCase().includes(search) ||
+      s.user_name?.toLowerCase().includes(search) ||
+      s.customers?.full_name?.toLowerCase().includes(search)
+    );
+  });
 
   return (
     <div className="space-y-12 animate-in fade-in duration-700 mt-6 pb-20">
@@ -945,26 +1094,82 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
       </div>
 
       <div className="glass rounded-[2.5rem] md:rounded-[3rem] p-6 md:p-8">
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
-          <div className="text-center sm:text-right">
-            <h2 className="text-xl md:text-2xl font-black text-slate-900">إدارة الجلسات الحالية</h2>
-            <p className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest mt-1">Live Workspace Monitor</p>
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-6 mb-8">
+          <div className="flex gap-2 bg-slate-100 p-1.5 rounded-[1.5rem] shadow-inner">
+             <button 
+               onClick={() => setActiveView('active')}
+               className={`px-8 py-3 rounded-xl font-black text-xs transition-all flex items-center gap-2 ${activeView === 'active' ? 'bg-white text-indigo-600 shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}
+             >
+               <Users2 size={16} />
+               الجلسات النشطة
+             </button>
+             <button 
+               onClick={() => setActiveView('history')}
+               className={`px-8 py-3 rounded-xl font-black text-xs transition-all flex items-center gap-2 ${activeView === 'history' ? 'bg-white text-indigo-600 shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}
+             >
+               <Receipt size={16} />
+               السجل والتقارير
+             </button>
           </div>
-          <button 
-            onClick={fetchSessions}
-            className="p-3 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-2xl transition-all active:scale-95 flex items-center gap-2"
-          >
-            <span className="text-xs font-black sm:hidden tracking-wider">تحديث البيانات</span>
-            <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
-          </button>
+          <div className="text-center sm:text-right">
+            <h2 className="text-xl md:text-2xl font-black text-slate-900">{activeView === 'active' ? 'إدارة الجلسات الحالية' : 'سجل المعاملات والتقارير'}</h2>
+            <p className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest mt-1">{activeView === 'active' ? 'Live Workspace Monitor' : 'Monthly Financial Archive'}</p>
+          </div>
         </div>
 
-        {/* Desktop Table View */}
-        <div className="hidden lg:block overflow-x-auto custom-scrollbar">
-            <table className="w-full text-right min-w-[800px]">
-              <thead>
-                <tr className="border-b border-indigo-100 bg-indigo-50/30">
-                  <th className="py-6 px-6 text-indigo-900 font-black">المستخدم</th>
+        {activeView === 'history' && (
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+              <div className="md:col-span-1">
+                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 text-right px-2">فلتر الشهر</label>
+                 <div className="relative group">
+                    <input 
+                        type="month"
+                        value={historyMonth}
+                        onChange={(e) => setHistoryMonth(e.target.value)}
+                        className="w-full h-16 bg-white border-2 border-slate-50 rounded-2xl px-6 font-black text-slate-900 outline-none focus:border-indigo-400 focus:bg-white transition-all text-right shadow-sm group-hover:shadow-md"
+                    />
+                 </div>
+              </div>
+              <div className="md:col-span-2 relative group">
+                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 text-right px-2">بحث بالكود أو رقم الهاتف أو اسم العميل</label>
+                 <div className="relative">
+                    <input 
+                        type="text"
+                        placeholder="بحث في السجل..."
+                        value={historySearch}
+                        onChange={(e) => setHistorySearch(e.target.value)}
+                        className="w-full h-16 bg-white border-2 border-slate-50 rounded-2xl px-14 text-right font-black outline-none focus:border-indigo-400 focus:bg-white transition-all shadow-sm group-hover:shadow-md"
+                    />
+                    <Briefcase className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-400 transition-colors" size={22} />
+                 </div>
+              </div>
+           </div>
+        )}
+
+        {activeView === 'active' && (
+           <div className="relative group mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 text-right px-2">بحث في الجلسات الحالية (بالاسم أو الكود أو رقم الهاتف)</label>
+              <div className="relative">
+                 <input 
+                    type="text"
+                    placeholder="ابحث عن مستخدم نشط..."
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                    className="w-full h-16 bg-white border-2 border-slate-50 rounded-2xl px-14 text-right font-black outline-none focus:border-indigo-400 focus:bg-white transition-all shadow-sm group-hover:shadow-md"
+                 />
+                 <Search className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-400 transition-colors" size={22} />
+              </div>
+           </div>
+        )}
+
+        {activeView === 'active' ? (
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden lg:block overflow-x-auto custom-scrollbar">
+                <table className="w-full text-right min-w-[800px]">
+                  <thead>
+                    <tr className="border-b border-indigo-100 bg-indigo-50/30">
+                      <th className="py-6 px-6 text-indigo-900 font-black">المستخدم</th>
                   <th className="py-6 px-6 text-indigo-900 font-black">رقم الهاتف</th>
                   <th className="py-6 px-6 text-indigo-900 font-black">وقت البدء</th>
                   <th className="py-6 px-6 text-indigo-900 font-black">الوقت المنقضي</th>
@@ -974,7 +1179,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                 </tr>
               </thead>
               <tbody>
-                {sessions.map((session: any) => {
+                {filteredSessions.map((session: any) => {
                   const start = new Date(session.start_time).getTime();
                   const currentRefTime = session.is_paused ? new Date(session.last_pause_start).getTime() : now;
                   const totalPausedMs = (Number(session.total_paused_minutes) || 0) * 60000;
@@ -998,22 +1203,27 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                       <td className="py-6 px-6">
                         <div className="flex flex-row-reverse items-center justify-end gap-3 text-right">
                           <div className="text-right">
-                            <div className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
-                              {session.services ? (
-                                <div 
-                                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 font-black text-xs shadow-sm transition-all hover:scale-105"
-                                  style={{ 
-                                    backgroundColor: `${session.services.color || '#4f46e5'}10`, 
-                                    color: session.services.color || '#4f46e5',
-                                    borderColor: `${session.services.color || '#4f46e5'}30`
-                                  }}
-                                >
-                                  <Layout size={14} />
-                                  {session.services.code || 'ROOM'}
+                             <div className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
+                               {session.services ? (
+                                 <div 
+                                   className="flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 font-black text-xs shadow-sm transition-all hover:scale-105"
+                                   style={{ 
+                                     backgroundColor: `${session.services.color || '#4f46e5'}10`, 
+                                     color: session.services.color || '#4f46e5',
+                                     borderColor: `${session.services.color || '#4f46e5'}30`
+                                   }}
+                                 >
+                                   <Layout size={14} />
+                                   {session.services.code || 'ROOM'}
+                                 </div>
+                               ) : null}
+                               {session.user_name || session.customers?.full_name || (session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'مستخدم غير مسجل')}
+                             </div>
+                             {session.services && session.user_name && session.customers?.full_name && session.user_name !== session.customers?.full_name && (
+                                <div className="text-[10px] font-black text-slate-400 mt-0.5 text-right">
+                                   محجوز بواسطة: {session.customers.full_name}
                                 </div>
-                              ) : null}
-                              {session.customers?.full_name || (session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'مستخدم غير مسجل')}
-                            </div>
+                             )}
                             <div className="flex flex-row-reverse items-center gap-2 mt-1">
                                <div className="text-sm font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded-lg w-fit">{session.user_code}</div>
                                {session.partners && (
@@ -1155,7 +1365,7 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
 
           {/* Mobile Card View */}
           <div className="lg:hidden space-y-4">
-            {sessions.map((session) => {
+            {filteredSessions.map((session) => {
               const start = new Date(session.start_time).getTime();
               const currentRefTime = session.is_paused ? new Date(session.last_pause_start).getTime() : now;
               const totalPausedMs = (Number(session.total_paused_minutes) || 0) * 60000;
@@ -1186,10 +1396,10 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
                       </div>
                       <div className="text-right">
                         <div className="font-black text-slate-900 text-base leading-tight">
-                          {session.services?.name_ar || session.user_name || session.customers?.full_name || (session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'Ù…سØªØ®دÙ…')}
-                          {session.services?.name_ar && (session.user_name || session.customers?.full_name) && (session.user_name !== session.services?.name_ar) && (
-                            <span className="text-slate-400 text-[10px] font-bold block mt-1">
-                               ({session.user_name || session.customers?.full_name})
+                          {session.user_name || session.customers?.full_name || (session.user_code.startsWith('NA') ? `زائر (${session.user_code})` : 'مستخدم')}
+                          {session.services && session.user_name && session.customers?.full_name && session.user_name !== session.customers?.full_name && (
+                            <span className="text-slate-400 text-[9px] font-black block mt-0.5">
+                               محجوز بواسطة: {session.customers.full_name}
                             </span>
                           )}
                         </div>
@@ -1308,7 +1518,147 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
               </div>
             )}
           </div>
-      </div>
+        </>
+      ) : (
+        <div className="space-y-8 animate-in fade-in duration-700">
+           {/* History Stats Cards */}
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
+                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -z-0" />
+                 <div className="relative z-10 text-right">
+                    <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2">إجمالي الزيارات</p>
+                    <h4 className="text-4xl font-black">{historySessions.length}</h4>
+                 </div>
+                 <Users2 size={40} className="absolute bottom-6 left-6 text-white/10 group-hover:scale-125 transition-transform" />
+              </div>
+              
+              <div className="bg-indigo-600 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
+                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -z-0" />
+                 <div className="relative z-10 text-right">
+                    <p className="text-indigo-200 text-[10px] font-black uppercase tracking-widest mb-2">إجمالي الإيرادات</p>
+                    <h4 className="text-4xl font-black">
+                      {historySessions.reduce((sum, s: any) => sum + (s.catering_amount || 0) + (s.workspace_amount || 0), 0).toLocaleString()} 
+                      <span className="text-xs ml-2 opacity-60">EGP</span>
+                    </h4>
+                 </div>
+                 <DollarSign size={40} className="absolute bottom-6 left-6 text-white/10 group-hover:scale-125 transition-transform" />
+              </div>
+
+              <div className="bg-emerald-600 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
+                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -z-0" />
+                 <div className="relative z-10 text-right">
+                    <p className="text-emerald-100 text-[10px] font-black uppercase tracking-widest mb-2">جلسات مكتملة</p>
+                    <h4 className="text-4xl font-black">{historySessions.filter(s => s.status === 'completed').length}</h4>
+                 </div>
+                 <CheckCircle2 size={40} className="absolute bottom-6 left-6 text-white/10 group-hover:scale-125 transition-transform" />
+              </div>
+
+              <div className="bg-rose-600 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
+                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -z-0" />
+                 <div className="relative z-10 text-right">
+                    <p className="text-rose-100 text-[10px] font-black uppercase tracking-widest mb-2">تحصيل معلق</p>
+                    <h4 className="text-4xl font-black">
+                      {historySessions.filter(s => s.status !== 'completed').length}
+                    </h4>
+                 </div>
+                 <AlertCircle size={40} className="absolute bottom-6 left-6 text-white/10 group-hover:scale-125 transition-transform" />
+              </div>
+           </div>
+
+           {/* History Table */}
+           <div className="bg-white rounded-[2.5rem] border border-slate-100 overflow-hidden shadow-sm">
+              <div className="overflow-x-auto custom-scrollbar">
+                 <table className="w-full text-right min-w-[900px]">
+                    <thead>
+                       <tr className="border-b border-slate-100 bg-slate-50/50">
+                          <th className="py-6 px-8 text-slate-500 font-black text-xs uppercase">العميل والمصدر</th>
+                          <th className="py-6 px-6 text-slate-500 font-black text-xs uppercase">التاريخ والوقت</th>
+                          <th className="py-6 px-6 text-slate-500 font-black text-xs uppercase text-center">المدة</th>
+                          <th className="py-6 px-6 text-slate-500 font-black text-xs uppercase">المبلغ الإجمالي</th>
+                          <th className="py-6 px-6 text-slate-500 font-black text-xs uppercase">وسيلة الدفع</th>
+                          <th className="py-6 px-8 text-slate-500 font-black text-xs uppercase">الحالة</th>
+                          <th className="py-6 px-8 text-slate-500 font-black text-xs uppercase text-center">الإجراءات</th>
+                       </tr>
+                    </thead>
+                    <tbody>
+                       {historyLoading ? (
+                          <tr><td colSpan={7} className="py-32 text-center"><div className="flex flex-col items-center gap-4"><RefreshCw className="animate-spin text-indigo-600" size={32} /><p className="font-black text-slate-400">جاري تحميل السجلات...</p></div></td></tr>
+                       ) : historySessions.length === 0 ? (
+                          <tr><td colSpan={7} className="py-32 text-center text-slate-400 font-black">لا توجد سجلات مطابقة للبحث في هذا الشهر</td></tr>
+                       ) : historySessions.map((s: any) => {
+                          const totalAmount = (s.catering_amount || 0) + (s.workspace_amount || 0);
+                          const start = new Date(s.start_time);
+                          const end = s.end_time ? new Date(s.end_time) : null;
+                          const diffMins = end ? Math.floor((end.getTime() - start.getTime()) / 60000) : 0;
+
+                          return (
+                             <tr key={s.id} className="border-b border-slate-50 hover:bg-indigo-50/20 transition-all group">
+                                <td className="py-6 px-8">
+                                   <div className="flex flex-row-reverse items-center justify-end gap-3">
+                                      <div className="text-right">
+                                         <p className="font-black text-slate-900 text-base">{s.user_name || s.customers?.full_name || s.user_code}</p>
+                                         {s.user_name && s.customers?.full_name && s.user_name !== s.customers?.full_name && (
+                                            <p className="text-[9px] font-black text-slate-400 mb-1 leading-tight">محجوز بواسطة: {s.customers.full_name}</p>
+                                         )}
+                                         <div className="flex flex-row-reverse items-center gap-2 mt-1">
+                                            <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded">{s.user_code}</span>
+                                            {s.partners && <span className="text-[10px] font-black text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded flex items-center gap-1 flex-row-reverse"><Briefcase size={10} />{s.partners.name}</span>}
+                                         </div>
+                                      </div>
+                                   </div>
+                                </td>
+                                <td className="py-6 px-6">
+                                   <p className="text-slate-600 font-black text-sm">{start.toLocaleDateString('ar-EG')}</p>
+                                   <p className="text-[10px] text-slate-400 font-bold mt-1">{start.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</p>
+                                </td>
+                                <td className="py-6 px-6 text-center">
+                                   <div className="inline-flex flex-col items-center bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
+                                      <span className="text-slate-900 font-black text-sm">{Math.floor(diffMins / 60)}h {diffMins % 60}m</span>
+                                   </div>
+                                </td>
+                                <td className="py-6 px-6">
+                                   <div className="flex items-center gap-2 font-black">
+                                      <span className="text-indigo-600 text-lg">{totalAmount.toLocaleString()}</span>
+                                      <span className="text-[10px] text-slate-400 uppercase">EGP</span>
+                                   </div>
+                                </td>
+                                <td className="py-6 px-6">
+                                    <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black inline-flex items-center gap-2 ${
+                                      s.payment_method === 'vfcash' ? 'bg-rose-50 text-rose-600' :
+                                      s.payment_method === 'instapay' ? 'bg-indigo-50 text-indigo-600' :
+                                      s.payment_method === 'corporate' ? 'bg-amber-50 text-amber-600' :
+                                      'bg-emerald-50 text-emerald-600'
+                                    }`}>
+                                      {s.payment_method === 'vfcash' ? <Phone size={12} /> : 
+                                       s.payment_method === 'instapay' ? <Smartphone size={12} /> : 
+                                       s.payment_method === 'corporate' ? <Briefcase size={12} /> : 
+                                       <DollarSign size={12} />}
+                                      {s.payment_method === 'vfcash' ? 'Vodafone Cash' :
+                                       s.payment_method === 'instapay' ? 'InstaPay' :
+                                       s.payment_method === 'corporate' ? 'Corporate' :
+                                       'نقدي (كاش)'}
+                                    </span>
+                                 </td>
+                                <td className="py-6 px-8">
+                                   <span className={`px-4 py-2 rounded-2xl text-[10px] font-black shadow-sm ${
+                                      s.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                      s.status === 'active' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100 animate-pulse' :
+                                      'bg-amber-50 text-amber-600 border border-amber-100'
+                                   }`}>
+                                      {s.status === 'completed' ? 'مكتمل ومسدد' : 
+                                       s.status === 'active' ? 'قيد الاستخدام' : s.status}
+                                   </span>
+                                </td>
+                             </tr>
+                          );
+                       })}
+                    </tbody>
+                 </table>
+              </div>
+           </div>
+        </div>
+      )}
+    </div>
       
       {/* Bill Adjustment Modal */}
       <Modal 
@@ -1736,6 +2086,59 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
         )}
       </Modal>
 
+      {/* Guest Name Popup Modal */}
+      <Modal
+        isOpen={showGuestModal}
+        onClose={() => {
+          setShowGuestModal(false);
+          setGuestName('');
+        }}
+        title="بيانات الزائر الجديد"
+      >
+        <div className="p-8 space-y-6 text-right">
+           <div className="bg-indigo-50/50 p-6 rounded-[2rem] border border-indigo-100/50">
+              <div className="flex items-center justify-center w-16 h-16 bg-indigo-100 text-indigo-600 rounded-2xl mx-auto mb-4">
+                 <Users2 size={32} />
+              </div>
+              <h3 className="text-xl font-black text-slate-900 text-center mb-1">تسجيل زائر جديد</h3>
+              <p className="text-[10px] font-black text-slate-400 text-center uppercase tracking-widest">Guest Registration • {manualCode.toUpperCase()}</p>
+           </div>
+
+           <div className="space-y-2">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">اسم الزائر (اختياري)</label>
+              <input 
+                type="text"
+                autoFocus
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+                placeholder="ادخل اسم الزائر هنا..."
+                className="w-full h-16 bg-slate-50 border-2 border-transparent rounded-2xl px-6 font-black text-slate-900 text-center outline-none focus:border-indigo-400 focus:bg-white transition-all shadow-inner"
+                onKeyDown={(e) => e.key === 'Enter' && handleStartManualSession()}
+              />
+           </div>
+
+           <div className="grid grid-cols-2 gap-4 pt-4">
+              <button 
+                onClick={() => {
+                  setShowGuestModal(false);
+                  setGuestName('');
+                }}
+                className="h-16 rounded-2xl bg-slate-100 text-slate-500 font-black hover:bg-slate-200 transition-all active:scale-95"
+              >
+                إلغاء
+              </button>
+              <button 
+                onClick={handleStartManualSession}
+                disabled={startingSession}
+                className="h-16 rounded-2xl bg-indigo-600 text-white font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                {startingSession ? <RefreshCw className="animate-spin" /> : <CheckCircle2 size={18} />}
+                بدء الجلسة
+              </button>
+           </div>
+        </div>
+      </Modal>
+
       {/* Checkout Success Bill Modal */}
       <Modal 
         isOpen={!!checkoutBill} 
@@ -1982,6 +2385,43 @@ export const WorkspaceAdminSessions = ({ branchId }: { branchId?: string }) => {
         </div>,
         document.body
       )}
+      
+      {/* Edit Payment Method Modal */}
+      <Modal
+        isOpen={!!editingPaymentSession}
+        onClose={() => setEditingPaymentSession(null)}
+        title="تعديل وسيلة الدفع"
+      >
+        <div className="p-2 pt-4 text-center space-y-8">
+          <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+            <p className="text-[10px] font-black text-slate-400 uppercase mb-2">العميل</p>
+            <h4 className="text-xl font-black text-slate-900">{editingPaymentSession?.user_name || editingPaymentSession?.user_code}</h4>
+            <p className="text-sm font-bold text-indigo-600 mt-1">المبلغ: {((editingPaymentSession?.catering_amount || 0) + (editingPaymentSession?.workspace_amount || 0)).toLocaleString()} ج.م</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {[
+              { id: 'cash', label: 'كاش (نقدي)', icon: DollarSign, color: 'text-emerald-600 bg-emerald-50' },
+              { id: 'vfcash', label: 'Vodafone Cash', icon: Phone, color: 'text-rose-600 bg-rose-50' },
+              { id: 'instapay', label: 'InstaPay', icon: Smartphone, color: 'text-indigo-600 bg-indigo-50' },
+              { id: 'corporate', label: 'حساب شركة', icon: Users2, color: 'text-amber-600 bg-amber-50' },
+            ].map(method => (
+              <button
+                key={method.id}
+                onClick={() => handleUpdatePaymentMethod(editingPaymentSession.id, method.id)}
+                className={`p-6 rounded-[2rem] border-2 transition-all flex flex-col items-center gap-3 group ${editingPaymentSession?.payment_method === method.id ? 'border-indigo-600 bg-indigo-50/30' : 'border-slate-50 hover:border-slate-200 bg-white'}`}
+              >
+                <div className={`p-4 rounded-2xl ${method.color} transition-transform group-hover:scale-110`}>
+                  <method.icon size={24} />
+                </div>
+                <span className="font-black text-sm text-slate-700">{method.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <button onClick={() => setEditingPaymentSession(null)} className="w-full h-14 rounded-2xl font-black text-slate-400 hover:bg-slate-50 transition-all">إلغاء</button>
+        </div>
+      </Modal>
     </div>
   );
 };

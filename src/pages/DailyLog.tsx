@@ -252,6 +252,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
   const [editTotal, setEditTotal] = useState('');
   const [editOrders, setEditOrders] = useState<any[]>([]);
   const [editNotes, setEditNotes] = useState('');
+  const [editPaymentMethod, setEditPaymentMethod] = useState('');
 
   // Helper to format UTC ISO to Cairo Local YYYY-MM-DDTHH:mm
   const toCairoInput = (iso?: string | Date) => {
@@ -423,21 +424,66 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
   const handleUpdateSession = async () => {
     if (!editingSession) return;
     try {
+      const oldMethod = editingSession.payment_method || 'cash';
+      const newMethod = editPaymentMethod;
+      const amount = parseFloat(editTotal) || 0;
+      const oldAmount = Number(editingSession.total_amount) || 0;
+      const dateStr = selectedDate;
+
       const { error } = await (supabase as any)
         .from('workspace_sessions')
         .update({
           start_time: fromCairoInput(editStartTime),
           end_time: fromCairoInput(editEndTime),
           catering_amount: parseFloat(editCatering) || 0,
-          total_amount: parseFloat(editTotal) || 0,
+          total_amount: amount,
+          payment_method: newMethod,
           orders: editOrders,
           notes: editNotes
         })
         .eq('id', editingSession.id);
 
       if (error) throw error;
+
+      // Update Daily History if something changed
+      if (oldMethod !== newMethod || oldAmount !== amount) {
+        const { data: closing } = await supabase
+          .from('daily_closings')
+          .select('*')
+          .eq('branch_id', branchId)
+          .eq('date', dateStr)
+          .single();
+
+        if (closing) {
+          let newExpectedCash = Number(closing.expected_cash) || 0;
+          let newVfCash = Number(closing.vfcash_total) || 0;
+          let newInstaPay = Number(closing.instapay_total) || 0;
+
+          // 1. Revert OLD values
+          if (oldMethod === 'cash') newExpectedCash -= oldAmount;
+          else if (oldMethod === 'vfcash') newVfCash -= oldAmount;
+          else if (oldMethod === 'instapay') newInstaPay -= oldAmount;
+
+          // 2. Add NEW values
+          if (newMethod === 'cash') newExpectedCash += amount;
+          else if (newMethod === 'vfcash') newVfCash += amount;
+          else if (newMethod === 'instapay') newInstaPay += amount;
+
+          await supabase
+            .from('daily_closings')
+            .update({
+              expected_cash: newExpectedCash,
+              vfcash_total: newVfCash,
+              instapay_total: newInstaPay,
+              difference: Number(closing.actual_cash) - newExpectedCash
+            })
+            .eq('id', closing.id);
+        }
+      }
+
       setEditingSession(null);
       fetchLogData();
+      alert('تم تحديث الجلسة والسجل المالي بنجاح');
     } catch (err: any) {
       alert('خطأ في التحديث: ' + err.message);
     }
@@ -690,6 +736,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                     setEditTotal(s.total_amount?.toString() || '0');
                     setEditOrders(s.orders || []);
                     setEditNotes(s.notes || '');
+                    setEditPaymentMethod(s.payment_method || 'cash');
                   }}
                   onDelete={handleDeleteSession}
                   onPrint={handlePrintReceipt}
@@ -747,6 +794,7 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                              setEditTotal(session.total_amount?.toString() || `0`);
                              setEditOrders(session.orders || []);
                              setEditNotes(session.notes || ``);
+                             setEditPaymentMethod(session.payment_method || 'cash');
                           }}
                           className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl active:scale-90"
                           title="Edit Session"
@@ -901,6 +949,34 @@ export const DailyLog = ({ branchId }: { branchId?: string }) => {
                         className="w-full h-16 bg-slate-50 border-2 border-slate-100 rounded-3xl px-6 text-sm font-black text-slate-800 outline-none focus:border-indigo-400 transition-all text-center"
                       />
                    </div>
+                </div>
+
+                <div className="space-y-4 pt-6 border-t border-slate-50">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest text-right mr-2">وسيلة الدفع</label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                       {[
+                          { id: 'cash', label: 'Cash', icon: DollarSign, color: 'text-emerald-600 bg-emerald-50' },
+                          { id: 'vfcash', label: 'VF Cash', icon: Phone, color: 'text-rose-600 bg-rose-50' },
+                          { id: 'instapay', label: 'InstaPay', icon: Smartphone, color: 'text-indigo-600 bg-indigo-50' },
+                          { id: 'corporate', label: 'Corporate', icon: Briefcase, color: 'text-amber-600 bg-amber-50' },
+                       ].map(method => (
+                          <button
+                             key={method.id}
+                             type="button"
+                             onClick={() => setEditPaymentMethod(method.id)}
+                             className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
+                                editPaymentMethod === method.id 
+                                ? 'border-indigo-600 bg-indigo-50 shadow-sm' 
+                                : 'border-slate-50 bg-white hover:border-slate-200'
+                             }`}
+                          >
+                             <div className={`p-2 rounded-lg ${method.color}`}>
+                                <method.icon size={16} />
+                             </div>
+                             <span className="text-[10px] font-black">{method.label}</span>
+                          </button>
+                       ))}
+                    </div>
                 </div>
 
                 <div className="space-y-3">
